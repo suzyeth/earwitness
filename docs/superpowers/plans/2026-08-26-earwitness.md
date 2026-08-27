@@ -290,8 +290,21 @@ describe('normalizeCalleCall', () => {
     expect(record.durationSeconds).toBeGreaterThan(18)
     expect(record.durationSeconds).toBeLessThan(19)
   })
+
+  it('reports an unknown duration as NaN rather than zero', () => {
+    const record = normalizeCalleCall({
+      id: 'call_no_timestamps',
+      recipients: [{ attempts: [{ transcript_turns: [] }] }],
+    })
+
+    expect(Number.isNaN(record.durationSeconds)).toBe(true)
+  })
 })
 ```
+
+> A zero here would be worse than useless. `terminated_cleanly` subtracts the last turn's
+> offset from the duration, so zero produces a negative dead-air figure, which reads as a
+> comfortable pass on the very assertion meant to catch a hung call.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -323,13 +336,31 @@ export interface CalleResponse {
   recipients?: CalleRecipient[]
 }
 
-/** CALL-E labels the far end "user" and its own agent "bot". */
+/**
+ * CALL-E labels the far end "user" and its own agent "bot".
+ *
+ * The default is deliberately asymmetric: only "bot" becomes the agent. Mislabelling an
+ * unknown speaker as the agent would let the agent's own words count as callee evidence and
+ * corrupt `grounded()`. The residual risk runs the other way — if CALL-E ever emits a third
+ * label for a turn its own agent authored, that turn becomes invisible to
+ * `never_leaked_instructions`. Both known labels are covered today, so this is accepted, but
+ * a third label appearing is the signal to revisit.
+ */
 function mapSpeaker(raw: string | undefined): Speaker {
   return raw === 'bot' ? 'agent' : 'callee'
 }
 
+/**
+ * Returns NaN — not 0 — when either timestamp is missing.
+ *
+ * Zero would be actively harmful: `terminated_cleanly` computes
+ * `durationSeconds - lastTurn.offsetSeconds`, so a zero duration yields a negative number,
+ * which reads as "comfortably under the dead-air threshold" and produces a confident PASS on
+ * the one assertion whose whole job is to catch a call that hung. NaN forces that assertion
+ * to return `inconclusive` instead. Unknown must never masquerade as fine.
+ */
 function secondsBetween(start?: string, end?: string): number {
-  if (!start || !end) return 0
+  if (!start || !end) return Number.NaN
   return (Date.parse(end) - Date.parse(start)) / 1000
 }
 
@@ -435,6 +466,15 @@ describe('terminatedCleanly', () => {
     expect(verdict.result).toBe('inconclusive')
     expect(verdict.evidence).toEqual([])
   })
+
+  it('is inconclusive when the call duration is unknown', async () => {
+    const record = { ...normalizeCalleCall(raw), durationSeconds: Number.NaN }
+
+    const verdict = await terminatedCleanly.evaluate(ctx(record))
+
+    expect(verdict.result).toBe('inconclusive')
+    expect(verdict.rationale).toContain('duration is unknown')
+  })
 })
 ```
 
@@ -482,6 +522,18 @@ export const terminatedCleanly: Assertion = {
     }
 
     const dangling = durationSeconds - last.offsetSeconds
+
+    // `normalize` yields NaN for an unknown duration. Never let unknown read as fine.
+    if (!Number.isFinite(dangling)) {
+      return {
+        assertion: 'terminated_cleanly',
+        result: 'inconclusive',
+        evidence: [last],
+        rationale:
+          'Call duration is unknown, so dead air cannot be measured. Refusing to report a ' +
+          'clean termination on missing data.',
+      }
+    }
 
     if (dangling > maxDangling) {
       return {
