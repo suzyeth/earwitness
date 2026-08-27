@@ -29,4 +29,13 @@ describe('normalizeCalleCall', () => {
     expect(record.durationSeconds).toBeGreaterThan(18)
     expect(record.durationSeconds).toBeLessThan(19)
   })
+
+  it('reports an unknown duration as NaN rather than zero', () => {
+    const record = normalizeCalleCall({
+      id: 'call_no_timestamps',
+      recipients: [{ attempts: [{ transcript_turns: [] }] }],
+    })
+
+    expect(Number.isNaN(record.durationSeconds)).toBe(true)
+  })
 })

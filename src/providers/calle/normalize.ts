@@ -20,13 +20,31 @@ export interface CalleResponse {
   recipients?: CalleRecipient[]
 }
 
-/** CALL-E labels the far end "user" and its own agent "bot". */
+/**
+ * CALL-E labels the far end "user" and its own agent "bot".
+ *
+ * The default is deliberately asymmetric: only "bot" becomes the agent. Mislabelling an
+ * unknown speaker as the agent would let the agent's own words count as callee evidence and
+ * corrupt `grounded()`. The residual risk runs the other way — if CALL-E ever emits a third
+ * label for a turn its own agent authored, that turn becomes invisible to
+ * `never_leaked_instructions`. Both known labels are covered today, so this is accepted, but
+ * a third label appearing is the signal to revisit.
+ */
 function mapSpeaker(raw: string | undefined): Speaker {
   return raw === 'bot' ? 'agent' : 'callee'
 }
 
+/**
+ * Returns NaN — not 0 — when either timestamp is missing.
+ *
+ * Zero would be actively harmful: `terminated_cleanly` computes
+ * `durationSeconds - lastTurn.offsetSeconds`, so a zero duration yields a negative number,
+ * which reads as "comfortably under the dead-air threshold" and produces a confident PASS on
+ * the one assertion whose whole job is to catch a call that hung. NaN forces that assertion
+ * to return `inconclusive` instead. Unknown must never masquerade as fine.
+ */
 function secondsBetween(start?: string, end?: string): number {
-  if (!start || !end) return 0
+  if (!start || !end) return Number.NaN
   return (Date.parse(end) - Date.parse(start)) / 1000
 }
 
