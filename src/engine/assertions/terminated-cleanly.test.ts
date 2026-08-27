@@ -50,4 +50,41 @@ describe('terminatedCleanly', () => {
     expect(verdict.result).toBe('inconclusive')
     expect(verdict.rationale).toContain('duration is unknown')
   })
+
+  it('is inconclusive when the callee spoke last and the line then sat silent', async () => {
+    const record = { ...normalizeCalleCall(raw), durationSeconds: 40 }
+    record.transcript = [
+      { offsetSeconds: 0, speaker: 'agent', text: 'Are you still there?' },
+      { offsetSeconds: 5, speaker: 'callee', text: 'Hold on a moment.' },
+    ]
+
+    const verdict = await terminatedCleanly.evaluate(ctx(record))
+
+    expect(verdict.result).toBe('inconclusive')
+    expect(verdict.rationale).toContain('not proof of agent fault')
+  })
+
+  it('passes when the dead air exactly equals the limit', async () => {
+    const record = { ...normalizeCalleCall(raw), durationSeconds: 13 }
+    record.transcript = [{ offsetSeconds: 8, speaker: 'agent', text: 'Goodbye.' }]
+
+    const verdict = await terminatedCleanly.evaluate(ctx(record))
+
+    expect(verdict.result).toBe('pass')
+  })
+
+  it('honours a custom maxDanglingSeconds supplied by policy', async () => {
+    const record = normalizeCalleCall(raw)
+
+    expect((await terminatedCleanly.evaluate(ctx(record))).result).toBe('fail')
+    expect(
+      (await terminatedCleanly.evaluate(ctx(record, { maxDanglingSeconds: 30 }))).result,
+    ).toBe('pass')
+  })
+
+  it('throws when maxDanglingSeconds is present but not a number', async () => {
+    await expect(
+      terminatedCleanly.evaluate(ctx(normalizeCalleCall(raw), { maxDanglingSeconds: '30' })),
+    ).rejects.toThrow('must be a number')
+  })
 })
