@@ -65,4 +65,33 @@ describe('grounded', () => {
       }),
     ).rejects.toThrow('must be a number')
   })
+
+  it('is inconclusive when the transcript has no callee turns', async () => {
+    const r = record({ opens: 'nine thirty' })
+    r.transcript = [{ offsetSeconds: 0, speaker: 'agent', text: 'What time do you open?' }]
+
+    const verdict = await grounded.evaluate(ctx(r, 'opens'))
+
+    expect(verdict.result).toBe('inconclusive')
+    expect(verdict.rationale).toContain('no callee turns')
+  })
+
+  it('honours a custom minOverlap, and passes at the boundary', async () => {
+    const r = record({ opens: 'six in the evening' })
+    const at = (minOverlap: number) => ({
+      record: r,
+      judge: noJudge,
+      params: { field: 'opens', minOverlap },
+    })
+
+    // 'six in the evening' overlaps the callee turn at exactly 0.5 (in, the).
+    expect((await grounded.evaluate(at(0.6))).result).toBe('fail')
+    expect((await grounded.evaluate(at(0.5))).result).toBe('pass')
+  })
+
+  it('throws when the field value is neither a string nor a number', async () => {
+    await expect(grounded.evaluate(ctx(record({ opens: true }), 'opens'))).rejects.toThrow(
+      'only string and number fields',
+    )
+  })
 })
