@@ -475,6 +475,43 @@ describe('terminatedCleanly', () => {
     expect(verdict.result).toBe('inconclusive')
     expect(verdict.rationale).toContain('duration is unknown')
   })
+
+  it('is inconclusive when the callee spoke last and the line then sat silent', async () => {
+    const record = { ...normalizeCalleCall(raw), durationSeconds: 40 }
+    record.transcript = [
+      { offsetSeconds: 0, speaker: 'agent', text: 'Are you still there?' },
+      { offsetSeconds: 5, speaker: 'callee', text: 'Hold on a moment.' },
+    ]
+
+    const verdict = await terminatedCleanly.evaluate(ctx(record))
+
+    expect(verdict.result).toBe('inconclusive')
+    expect(verdict.rationale).toContain('not proof of agent fault')
+  })
+
+  it('passes when the dead air exactly equals the limit', async () => {
+    const record = { ...normalizeCalleCall(raw), durationSeconds: 13 }
+    record.transcript = [{ offsetSeconds: 8, speaker: 'agent', text: 'Goodbye.' }]
+
+    const verdict = await terminatedCleanly.evaluate(ctx(record))
+
+    expect(verdict.result).toBe('pass')
+  })
+
+  it('honours a custom maxDanglingSeconds supplied by policy', async () => {
+    const record = normalizeCalleCall(raw)
+
+    expect((await terminatedCleanly.evaluate(ctx(record))).result).toBe('fail')
+    expect(
+      (await terminatedCleanly.evaluate(ctx(record, { maxDanglingSeconds: 30 }))).result,
+    ).toBe('pass')
+  })
+
+  it('throws when maxDanglingSeconds is present but not a number', async () => {
+    await expect(
+      terminatedCleanly.evaluate(ctx(normalizeCalleCall(raw), { maxDanglingSeconds: '30' })),
+    ).rejects.toThrow('must be a number')
+  })
 })
 ```
 
@@ -488,45 +525,51 @@ Expected: FAIL — cannot resolve `./terminated-cleanly.js`.
 ```ts
 import type { Assertion, AssertionContext, Verdict } from '../../types.js'
 
+const NAME = 'terminated_cleanly'
 const DEFAULT_MAX_DANGLING_SECONDS = 5
 
+/**
+ * Distinguishes "absent" from "present but wrong type". A policy that says
+ * `maxDanglingSeconds: "10"` must fail loudly rather than silently reverting to the default
+ * and quietly verifying something other than what the operator asked for. Zod validates the
+ * policy file's shape but types `params` as `Record<string, unknown>`, so it cannot catch
+ * this — the assertion is the only place that knows its own parameter contract.
+ */
+function readMaxDangling(params: Record<string, unknown>): number {
+  const raw = params.maxDanglingSeconds
+  if (raw === undefined) return DEFAULT_MAX_DANGLING_SECONDS
+  if (typeof raw !== 'number') {
+    throw new Error(`${NAME}: params.maxDanglingSeconds must be a number, received ${typeof raw}.`)
+  }
+  return raw
+}
+
 export const terminatedCleanly: Assertion = {
-  name: 'terminated_cleanly',
+  name: NAME,
   tier: 1,
 
   async evaluate(ctx: AssertionContext): Promise<Verdict> {
     const { transcript, durationSeconds } = ctx.record
-    const maxDangling =
-      typeof ctx.params.maxDanglingSeconds === 'number'
-        ? ctx.params.maxDanglingSeconds
-        : DEFAULT_MAX_DANGLING_SECONDS
+    const maxDangling = readMaxDangling(ctx.params)
 
     const last = transcript[transcript.length - 1]
 
     if (!last) {
       return {
-        assertion: 'terminated_cleanly',
+        assertion: NAME,
         result: 'inconclusive',
         evidence: [],
         rationale: 'Transcript is empty; nothing to adjudicate.',
       }
     }
 
-    if (last.speaker !== 'agent') {
-      return {
-        assertion: 'terminated_cleanly',
-        result: 'pass',
-        evidence: [last],
-        rationale: 'Call ended on a callee turn.',
-      }
-    }
-
+    // Measured for BOTH final speakers. Silence after a callee turn is still silence.
     const dangling = durationSeconds - last.offsetSeconds
 
     // `normalize` yields NaN for an unknown duration. Never let unknown read as fine.
     if (!Number.isFinite(dangling)) {
       return {
-        assertion: 'terminated_cleanly',
+        assertion: NAME,
         result: 'inconclusive',
         evidence: [last],
         rationale:
@@ -536,21 +579,36 @@ export const terminatedCleanly: Assertion = {
     }
 
     if (dangling > maxDangling) {
+      // Who held the floor decides how damning the silence is.
+      if (last.speaker === 'agent') {
+        return {
+          assertion: NAME,
+          result: 'fail',
+          evidence: [last],
+          rationale:
+            `Agent spoke last at ${last.offsetSeconds}s, then ${dangling.toFixed(1)}s of dead air ` +
+            `elapsed before the call ended (limit ${maxDangling}s). The agent stalled rather than closing.`,
+        }
+      }
+
       return {
-        assertion: 'terminated_cleanly',
-        result: 'fail',
+        assertion: NAME,
+        result: 'inconclusive',
         evidence: [last],
         rationale:
-          `Agent spoke last at ${last.offsetSeconds}s, then ${dangling.toFixed(1)}s of dead air ` +
-          `elapsed before the call ended (limit ${maxDangling}s). The agent stalled rather than closing.`,
+          `Callee spoke last at ${last.offsetSeconds}s, then ${dangling.toFixed(1)}s of dead air ` +
+          `elapsed before the call ended (limit ${maxDangling}s). The agent never closed the call, ` +
+          `but silence following a callee turn is not proof of agent fault.`,
       }
     }
 
     return {
-      assertion: 'terminated_cleanly',
+      assertion: NAME,
       result: 'pass',
       evidence: [last],
-      rationale: `Agent closed at ${last.offsetSeconds}s and the call ended ${dangling.toFixed(1)}s later.`,
+      rationale:
+        `Call ended ${dangling.toFixed(1)}s after the final turn at ${last.offsetSeconds}s, ` +
+        `within the ${maxDangling}s limit.`,
     }
   },
 }
@@ -632,6 +690,22 @@ describe('grounded', () => {
     expect(verdict.result).toBe('fail')
     expect(verdict.rationale).toContain('absent')
   })
+
+  it('throws when the policy omits params.field', async () => {
+    await expect(
+      grounded.evaluate({ record: record({}), judge: noJudge, params: {} }),
+    ).rejects.toThrow('params.field is required')
+  })
+
+  it('throws when minOverlap is present but not a number', async () => {
+    await expect(
+      grounded.evaluate({
+        record: record({ opens: 'nine thirty' }),
+        judge: noJudge,
+        params: { field: 'opens', minOverlap: 'high' },
+      }),
+    ).rejects.toThrow('must be a number')
+  })
 })
 ```
 
@@ -645,7 +719,26 @@ Expected: FAIL — cannot resolve `./grounded.js`.
 ```ts
 import type { Assertion, AssertionContext, TranscriptSpan, Verdict } from '../../types.js'
 
+const NAME = 'grounded'
 const DEFAULT_MIN_OVERLAP = 0.6
+
+/** Same contract as `terminated_cleanly`: absent is fine, wrong-typed is a loud failure. */
+function readField(params: Record<string, unknown>): string {
+  const raw = params.field
+  if (typeof raw !== 'string' || raw === '') {
+    throw new Error(`${NAME}: params.field is required and must be a non-empty string.`)
+  }
+  return raw
+}
+
+function readMinOverlap(params: Record<string, unknown>): number {
+  const raw = params.minOverlap
+  if (raw === undefined) return DEFAULT_MIN_OVERLAP
+  if (typeof raw !== 'number') {
+    throw new Error(`${NAME}: params.minOverlap must be a number, received ${typeof raw}.`)
+  }
+  return raw
+}
 
 function tokenize(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 0)
@@ -660,18 +753,18 @@ function overlap(value: string, span: string): number {
   return hits / valueTokens.length
 }
 
+/** Four of this assertion's five exits are failures, so a local helper earns its keep here. */
 function fail(rationale: string, evidence: TranscriptSpan[] = []): Verdict {
-  return { assertion: 'grounded', result: 'fail', evidence, rationale }
+  return { assertion: NAME, result: 'fail', evidence, rationale }
 }
 
 export const grounded: Assertion = {
-  name: 'grounded',
+  name: NAME,
   tier: 1,
 
   async evaluate(ctx: AssertionContext): Promise<Verdict> {
-    const field = String(ctx.params.field ?? '')
-    const minOverlap =
-      typeof ctx.params.minOverlap === 'number' ? ctx.params.minOverlap : DEFAULT_MIN_OVERLAP
+    const field = readField(ctx.params)
+    const minOverlap = readMinOverlap(ctx.params)
 
     const result = ctx.record.structuredResult
     if (!result || !(field in result)) {
@@ -694,7 +787,7 @@ export const grounded: Assertion = {
     }
 
     return {
-      assertion: 'grounded',
+      assertion: NAME,
       result: 'pass',
       evidence: [match],
       rationale: `Field "${field}" = "${value}" is grounded in a callee turn at ${match.offsetSeconds}s.`,
