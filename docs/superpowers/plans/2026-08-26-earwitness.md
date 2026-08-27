@@ -1491,6 +1491,27 @@ describe('adjudicate', () => {
     expect(verdicts.find((v) => v.assertion === 'self_report_matches_evidence')?.result).toBe('pass')
   })
 
+  it('names inconclusive assertions in the passing rationale so they are not lost', async () => {
+    const record = normalizeCalleCall(raw)
+    record.durationSeconds = 40
+    record.transcript = [
+      { offsetSeconds: 0, speaker: 'agent', text: 'Are you still there?' },
+      { offsetSeconds: 5, speaker: 'callee', text: 'Hold on a moment.' },
+    ]
+
+    const verdicts = await adjudicate({
+      record,
+      assertions: [{ name: 'terminated_cleanly', params: {} }],
+      judge: createStubJudge({}),
+    })
+
+    const meta = verdicts.find((v) => v.assertion === 'self_report_matches_evidence')
+
+    expect(meta?.result).toBe('pass')
+    expect(meta?.rationale).toContain('1 assertion(s) were inconclusive')
+    expect(meta?.rationale).toContain('terminated_cleanly')
+  })
+
   it('reports an unknown assertion as inconclusive rather than throwing', async () => {
     const verdicts = await adjudicate({
       record: normalizeCalleCall(raw),
@@ -1535,8 +1556,22 @@ const META = 'self_report_matches_evidence'
 function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Verdict {
   const claimed = record.selfReport.taskCompleted
   const failures = verdicts.filter((v) => v.result === 'fail')
+  const unresolved = verdicts.filter((v) => v.result === 'inconclusive')
   const evidence: TranscriptSpan[] = failures.flatMap((v) => v.evidence)
   const confidence = record.selfReport.confidence
+
+  /**
+   * Only a confirmed contradiction challenges the self-report — the same evidentiary
+   * conservatism assertions themselves obey. But an `inconclusive` is not always "no signal":
+   * a stall detected after a callee turn, for example, carries evidence and names a real
+   * pattern. A bare `pass` that absorbed it silently would invite over-trust, so the count is
+   * always surfaced in the rationale.
+   */
+  const caveat =
+    unresolved.length > 0
+      ? ` ${unresolved.length} assertion(s) were inconclusive and were not used to challenge the report: ` +
+        `${unresolved.map((v) => v.assertion).join(', ')}.`
+      : ''
 
   if (claimed === null) {
     return {
@@ -1575,7 +1610,7 @@ function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Ver
     assertion: META,
     result: 'pass',
     evidence: [],
-    rationale: `Provider self-report (task_completed=${claimed}) agrees with the evidence.`,
+    rationale: `Provider self-report (task_completed=${claimed}) agrees with the evidence.${caveat}`,
   }
 }
 
