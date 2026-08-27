@@ -1180,7 +1180,7 @@ export const neverLeakedInstructions: Assertion = {
 
     if (candidates.length === 0) {
       return {
-Expected: PASS, 7 tests.
+        assertion: NAME,
         result: 'pass',
         evidence: [],
         rationale: 'No agent turn resembled the task text closely enough to warrant review.',
@@ -1239,7 +1239,7 @@ Expected: PASS, 7 tests.
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/never-leaked-instructions.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
