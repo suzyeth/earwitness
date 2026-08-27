@@ -100,8 +100,8 @@ earwitness/
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
@@ -109,8 +109,25 @@ earwitness/
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }
+```
+
+> **Why `nodenext` and not `bundler`.** Every import in this project is written with an
+> explicit `.js` specifier on a `.ts` file. Under `moduleResolution: "bundler"` a *missing*
+> `.js` extension compiles clean, runs clean under `tsx`, and runs clean under `vitest` — but
+> crashes with `ERR_MODULE_NOT_FOUND` when `dist/cli/index.js` is run by plain Node, which is
+> exactly how the `bin` entry executes. `nodenext` turns that mistake into a compile error
+> (TS2835) instead. `module` and `moduleResolution` must both be `nodenext`; TypeScript rejects
+> mixing them (TS5110).
+>
+> `exclude` keeps colocated `*.test.ts` files out of `dist/`.
+
+Add `*.tsbuildinfo` to `.gitignore` as well — `tsc -b` writes it to the repo root, where the
+existing ignore rules do not catch it.
+
+```json
 ```
 
 - [ ] **Step 3: Create `vitest.config.ts`**
