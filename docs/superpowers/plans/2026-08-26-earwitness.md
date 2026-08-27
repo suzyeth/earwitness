@@ -399,7 +399,7 @@ export function normalizeCalleCall(res: CalleResponse): CallRecord {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/providers/calle/normalize.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -617,7 +617,7 @@ export const terminatedCleanly: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/terminated-cleanly.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -872,7 +872,7 @@ export const grounded: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/grounded.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1180,7 +1180,7 @@ export const neverLeakedInstructions: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/never-leaked-instructions.test.ts`
-Expected: PASS, 2 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
