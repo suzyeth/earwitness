@@ -706,6 +706,35 @@ describe('grounded', () => {
       }),
     ).rejects.toThrow('must be a number')
   })
+
+  it('is inconclusive when the transcript has no callee turns', async () => {
+    const r = record({ opens: 'nine thirty' })
+    r.transcript = [{ offsetSeconds: 0, speaker: 'agent', text: 'What time do you open?' }]
+
+    const verdict = await grounded.evaluate(ctx(r, 'opens'))
+
+    expect(verdict.result).toBe('inconclusive')
+    expect(verdict.rationale).toContain('no callee turns')
+  })
+
+  it('honours a custom minOverlap, and passes at the boundary', async () => {
+    const r = record({ opens: 'six in the evening' })
+    const at = (minOverlap: number) => ({
+      record: r,
+      judge: noJudge,
+      params: { field: 'opens', minOverlap },
+    })
+
+    // 'six in the evening' overlaps the callee turn at exactly 0.5 (in, the).
+    expect((await grounded.evaluate(at(0.6))).result).toBe('fail')
+    expect((await grounded.evaluate(at(0.5))).result).toBe('pass')
+  })
+
+  it('throws when the field value is neither a string nor a number', async () => {
+    await expect(grounded.evaluate(ctx(record({ opens: true }), 'opens'))).rejects.toThrow(
+      'only string and number fields',
+    )
+  })
 })
 ```
 
@@ -740,6 +769,36 @@ function readMinOverlap(params: Record<string, unknown>): number {
   return raw
 }
 
+/**
+ * Only strings and numbers can meaningfully be compared against speech. A boolean would
+ * stringify to "true"/"false" — words a callee essentially never utters — so every boolean
+ * field would fail permanently and indistinguishably from a real hallucination. Objects
+ * stringify to "[object Object]". Coercing those silently would yield a confident but
+ * meaningless verdict, so this fails loudly instead.
+ */
+function readValue(field: string, raw: unknown): string {
+  if (typeof raw === 'string') return raw
+  if (typeof raw === 'number') return String(raw)
+  if (raw === null || raw === undefined) return ''
+  throw new Error(
+    `${NAME}: field "${field}" is ${typeof raw}; only string and number fields can be grounded.`,
+  )
+}
+
+/**
+ * Token-literal matching, with three known limits.
+ *
+ * 1. No number or format normalization. A value stored as "9:30am" will not match a
+ *    transcript rendering "nine thirty in the morning", and a name spelled out letter by
+ *    letter will not match the whole word. This errs toward false FAILS on reformatted
+ *    values — the conservative direction for an anti-hallucination check, but a real source
+ *    of false alarms on short high-value fields like times, phone numbers, and names.
+ * 2. Negation-blind. "Not Tuesday, actually Thursday" contains every token of the value
+ *    "Tuesday" and scores full overlap. That is the dangerous direction, and it is inherent
+ *    to bag-of-words matching rather than cheaply fixable at Tier 1.
+ * 3. ASCII-only character class, so accented and non-Latin text is dropped or truncated
+ *    ("café" tokenizes to ["caf"]). Acceptable while supported calls are English.
+ */
 function tokenize(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 0)
 }
@@ -771,12 +830,26 @@ export const grounded: Assertion = {
       return fail(`Field "${field}" is absent from the structured result.`)
     }
 
-    const value = String(result[field] ?? '')
+    const value = readValue(field, result[field])
     if (value.trim() === '') {
       return fail(`Field "${field}" is present but empty; nothing was actually captured.`)
     }
 
     const calleeSpans = ctx.record.transcript.filter((s) => s.speaker === 'callee')
+
+    // Searched-and-not-found is a finding. Nothing-to-search is not. Mirrors the
+    // empty-transcript branch in `terminated_cleanly`.
+    if (calleeSpans.length === 0) {
+      return {
+        assertion: NAME,
+        result: 'inconclusive',
+        evidence: [],
+        rationale:
+          `Transcript contains no callee turns, so field "${field}" cannot be verified ` +
+          `against anything the other party said.`,
+      }
+    }
+
     const match = calleeSpans.find((s) => overlap(value, s.text) >= minOverlap)
 
     if (!match) {
