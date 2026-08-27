@@ -753,7 +753,7 @@ function overlap(value: string, span: string): number {
   return hits / valueTokens.length
 }
 
-/** Four of this assertion's five exits are failures, so a local helper earns its keep here. */
+/** Three of this assertion's four exits are failures, so a local helper earns its keep here. */
 function fail(rationale: string, evidence: TranscriptSpan[] = []): Verdict {
   return { assertion: NAME, result: 'fail', evidence, rationale }
 }
