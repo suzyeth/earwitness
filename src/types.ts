@@ -44,6 +44,10 @@ export interface JudgeQuestion {
 
 export interface Judgement {
   answer: boolean
+  /**
+   * Indexes into the `spans` array of the `JudgeQuestion` being answered — not into the
+   * full transcript. Callers pass a filtered subset of spans, so these are local indexes.
+   */
   citedSpanIndexes: number[]
   rationale: string
 }
