@@ -1890,12 +1890,34 @@ describe('adjudicate', () => {
   })
 
   it('names inconclusive assertions in the passing rationale so they are not lost', async () => {
+    // One assertion passes and one is inconclusive, so the claim is genuinely corroborated in
+    // part. terminated_cleanly passes (agent closes, call ends promptly); grounded is
+    // inconclusive because there are no callee turns to check the field against.
     const record = normalizeCalleCall(raw)
-    record.durationSeconds = 40
-    record.transcript = [
-      { offsetSeconds: 0, speaker: 'agent', text: 'Are you still there?' },
-      { offsetSeconds: 5, speaker: 'callee', text: 'Hold on a moment.' },
-    ]
+    record.durationSeconds = 3
+    record.transcript = [{ offsetSeconds: 0, speaker: 'agent', text: 'Hello.' }]
+    record.structuredResult = { opens: 'nine thirty' }
+
+    const verdicts = await adjudicate({
+      record,
+      assertions: [
+        { name: 'terminated_cleanly', params: {} },
+        { name: 'grounded', params: { field: 'opens' } },
+      ],
+      judge: createStubJudge({}),
+    })
+
+    const meta = verdicts.find((v) => v.assertion === 'self_report_matches_evidence')
+
+    expect(meta?.result).toBe('pass')
+    expect(meta?.rationale).toContain('1 assertion(s) were inconclusive')
+    expect(meta?.rationale).toContain('grounded')
+  })
+
+  it('will not call a success claim corroborated when nothing could be verified', async () => {
+    // A wholly silent call: every assertion goes inconclusive, so there is no evidence either
+    // way. Passing here would let "the call never really happened" sail through.
+    const record = { ...normalizeCalleCall(raw), transcript: [], durationSeconds: Number.NaN }
 
     const verdicts = await adjudicate({
       record,
@@ -1905,9 +1927,8 @@ describe('adjudicate', () => {
 
     const meta = verdicts.find((v) => v.assertion === 'self_report_matches_evidence')
 
-    expect(meta?.result).toBe('pass')
-    expect(meta?.rationale).toContain('1 assertion(s) were inconclusive')
-    expect(meta?.rationale).toContain('terminated_cleanly')
+    expect(meta?.result).toBe('inconclusive')
+    expect(meta?.rationale).toContain('nothing could be verified')
   })
 
   it('reports an unknown assertion as inconclusive rather than throwing', async () => {
@@ -1955,6 +1976,7 @@ function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Ver
   const claimed = record.selfReport.taskCompleted
   const failures = verdicts.filter((v) => v.result === 'fail')
   const unresolved = verdicts.filter((v) => v.result === 'inconclusive')
+  const passes = verdicts.filter((v) => v.result === 'pass')
   const evidence: TranscriptSpan[] = failures.flatMap((v) => v.evidence)
   const confidence = record.selfReport.confidence
 
@@ -1990,6 +2012,20 @@ function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Ver
         `Provider reported task_completed=true` +
         (confidence !== null ? ` at confidence ${confidence}` : '') +
         `, but evidence-based adjudication failed on: ${names}.`,
+    }
+  }
+
+  // "Agrees with the evidence" is a lie when there is no evidence. A wholly silent call makes
+  // every assertion inconclusive, and a success claim resting on that has been neither
+  // corroborated nor contradicted. Saying so is more honest than passing it.
+  if (failures.length === 0 && passes.length === 0) {
+    return {
+      assertion: META,
+      result: 'inconclusive',
+      evidence: [],
+      rationale:
+        `Provider reported task_completed=${claimed}, but nothing could be verified: ` +
+        `${unresolved.length} assertion(s) were inconclusive and none passed.${caveat}`,
     }
   }
 
@@ -2045,7 +2081,7 @@ export async function adjudicate(input: AdjudicateInput): Promise<Verdict[]> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/adjudicate.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
