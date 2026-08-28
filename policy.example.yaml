@@ -1,0 +1,16 @@
+version: 1
+name: Automated-line baseline
+provider: calle
+assertions:
+  - name: terminated_cleanly
+  - name: never_leaked_instructions
+  - name: no_human_burn
+  - name: grounded
+    params:
+      field: system_response_verbatim
+scenarios:
+  - id: zoom-bridge-baseline
+    phone: "+12532158782"
+    task: >-
+      Call this conference dial-in bridge, wait for the automated prompt, and report
+      exactly what the automated system says. Do not attempt to reach a human.
