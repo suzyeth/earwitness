@@ -2,6 +2,9 @@ import type { Verdict, VerdictResult } from '../types.js'
 
 export interface CallVerdicts {
   callId: string
+  // One verdict per assertion per call, and exactly one meta-verdict; `adjudicate()` enforces
+  // both upstream. `buildScorecard` counts per verdict, so a call carrying two meta-verdicts
+  // would double-count — unreachable today, but the assumption is worth naming.
   /**
    * What the provider claimed about this call, carried alongside the verdicts so the scorecard
    * can split disagreements by direction without parsing rationale text.
