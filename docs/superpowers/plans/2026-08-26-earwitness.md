@@ -2244,15 +2244,18 @@ scenarios: []
   })
 
   it('rejects a policy declaring an unsupported version', () => {
+    // assertions is non-empty on purpose: with an empty list the .min(1) check would throw
+    // independently and a bare .toThrow() could not tell which defect fired.
     expect(() =>
       parsePolicy(`
 version: 99
 name: from the future
 provider: calle
-assertions: []
+assertions:
+  - name: terminated_cleanly
 scenarios: []
 `),
-    ).toThrow()
+    ).toThrow(/version/)
   })
 
   it('rejects a policy that requests no assertions at all', () => {
