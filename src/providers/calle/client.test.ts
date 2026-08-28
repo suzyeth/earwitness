@@ -44,4 +44,33 @@ describe('CalleClient', () => {
     expect(final.status).toBe('completed')
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+  it('gives up after maxPolls rather than polling a real API forever', async () => {
+    // mockImplementation, not mockResolvedValue: a Response body can only be read once, so
+    // reusing one object across polls fails with "Body is unusable" rather than exercising
+    // the poll limit. Real fetch returns a fresh Response each call.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => jsonResponse({ id: 'call_1', status: 'in_progress' }))
+    const client = new CalleClient({
+      apiKey: 'k',
+      fetch: fetchMock,
+      sleep: async () => {},
+      maxPolls: 3,
+    })
+
+    await expect(client.waitForCall('call_1')).rejects.toThrow(
+      /did not reach a terminal status after 3 polls.*in_progress/s,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('omits result_schema entirely when the scenario declares none', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'call_1', status: 'queued' }))
+    const client = new CalleClient({ apiKey: 'k', fetch: fetchMock })
+
+    await client.placeCall({ task: 'hello', phone: '+12532158782', idempotencyKey: 'i' })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(Object.keys(JSON.parse(String(init.body)))).toEqual(['task', 'recipients'])
+  })
 })
