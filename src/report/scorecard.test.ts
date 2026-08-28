@@ -44,6 +44,23 @@ describe('buildScorecard', () => {
     expect(card.falseSuccessClaims).toBe(1)
   })
 
+  it('does not let an inconclusive fail the run', () => {
+    // Deliberate: a verdict that could not be evaluated is not a failure. The whole
+    // three-state verdict system rests on this, and nothing else pinned it.
+    const card = buildScorecard([
+      {
+        callId: 'call_1',
+        claimedSuccess: null,
+        verdicts: [
+          { assertion: 'terminated_cleanly', result: 'inconclusive', evidence: [], rationale: '' },
+        ],
+      },
+    ])
+
+    expect(card.totals.inconclusive).toBe(1)
+    expect(card.passed).toBe(true)
+  })
+
   it('marks the run as passed when nothing failed', () => {
     const card = buildScorecard([
       { callId: 'call_1', claimedSuccess: true, verdicts: [{ assertion: 'x', result: 'pass', evidence: [], rationale: '' }] },
