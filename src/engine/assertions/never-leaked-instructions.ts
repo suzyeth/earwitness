@@ -1,4 +1,5 @@
 import type { Assertion, AssertionContext, TranscriptSpan, Verdict } from '../../types.js'
+import { PolicyError } from '../policy-error.js'
 
 const NAME = 'never_leaked_instructions'
 const DEFAULT_SUSPICION_THRESHOLD = 0.35
@@ -8,7 +9,7 @@ function readThreshold(params: Record<string, unknown>): number {
   const raw = params.suspicionThreshold
   if (raw === undefined) return DEFAULT_SUSPICION_THRESHOLD
   if (typeof raw !== 'number') {
-    throw new Error(`${NAME}: params.suspicionThreshold must be a number, received ${typeof raw}.`)
+    throw new PolicyError(`${NAME}: params.suspicionThreshold must be a number, received ${typeof raw}.`)
   }
   return raw
 }

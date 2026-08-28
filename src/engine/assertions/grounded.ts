@@ -1,4 +1,5 @@
 import type { Assertion, AssertionContext, TranscriptSpan, Verdict } from '../../types.js'
+import { PolicyError } from '../policy-error.js'
 
 const NAME = 'grounded'
 const DEFAULT_MIN_OVERLAP = 0.6
@@ -7,7 +8,7 @@ const DEFAULT_MIN_OVERLAP = 0.6
 function readField(params: Record<string, unknown>): string {
   const raw = params.field
   if (typeof raw !== 'string' || raw === '') {
-    throw new Error(`${NAME}: params.field is required and must be a non-empty string.`)
+    throw new PolicyError(`${NAME}: params.field is required and must be a non-empty string.`)
   }
   return raw
 }
@@ -16,7 +17,7 @@ function readMinOverlap(params: Record<string, unknown>): number {
   const raw = params.minOverlap
   if (raw === undefined) return DEFAULT_MIN_OVERLAP
   if (typeof raw !== 'number') {
-    throw new Error(`${NAME}: params.minOverlap must be a number, received ${typeof raw}.`)
+    throw new PolicyError(`${NAME}: params.minOverlap must be a number, received ${typeof raw}.`)
   }
   return raw
 }
@@ -27,6 +28,13 @@ function readMinOverlap(params: Record<string, unknown>): number {
  * field would fail permanently and indistinguishably from a real hallucination. Objects
  * stringify to "[object Object]". Coercing those silently would yield a confident but
  * meaningless verdict, so this fails loudly instead.
+ *
+ * Deliberately a plain `Error`, not a `PolicyError`: this fires on a *field value*, which is
+ * data from one specific call, not a property of the policy itself. A pre-flight run against a
+ * synthetic empty record has no field value to inspect, so it could never catch this in
+ * advance — and one bad field on one call is not grounds to abort every other assertion on
+ * every other record. Do not "fix" this into a PolicyError for consistency with the readers
+ * above; the asymmetry is intentional.
  */
 function readValue(field: string, raw: unknown): string {
   if (typeof raw === 'string') return raw

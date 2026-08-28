@@ -1,5 +1,6 @@
 import type { CallRecord, Judge, TranscriptSpan, Verdict } from '../types.js'
 import { getAssertion } from './registry.js'
+import { PolicyError } from './policy-error.js'
 
 export interface AssertionRequest {
   name: string
@@ -95,30 +96,60 @@ function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Ver
   }
 }
 
-export async function adjudicate(input: AdjudicateInput): Promise<Verdict[]> {
-  const verdicts: Verdict[] = []
+/**
+ * Runs one requested assertion to a Verdict. Rejects only for a `PolicyError`; every other
+ * throw is caught and turned into an `inconclusive` verdict.
+ *
+ * The two are categorically different. A `PolicyError` (a missing required param, a param of
+ * the wrong type) will fail identically on every record, forever -- it is a defect in the
+ * policy file, not the call, so it must keep propagating and reach the operator before
+ * anything is dialled. The CLI's pre-flight in Task 19 depends on that propagation. Any other
+ * throw (a network hiccup inside a Tier 2 judge call, for instance) might succeed on retry and
+ * says nothing about the other four assertions, so before this it would abort the whole
+ * `Promise.all` and discard every other assertion's result -- tolerable when the only Judge was
+ * a deterministic in-memory stub, not once Tier 2 assertions are making real network calls to a
+ * fallible model.
+ */
+async function evaluateOne(
+  request: AssertionRequest,
+  record: CallRecord,
+  judge: Judge,
+): Promise<Verdict> {
+  const assertion = getAssertion(request.name)
 
-  for (const request of input.assertions) {
-    const assertion = getAssertion(request.name)
-
-    if (!assertion) {
-      verdicts.push({
-        assertion: request.name,
-        result: 'inconclusive',
-        evidence: [],
-        rationale: `Unknown assertion "${request.name}".`,
-      })
-      continue
+  if (!assertion) {
+    return {
+      assertion: request.name,
+      result: 'inconclusive',
+      evidence: [],
+      rationale: `Unknown assertion "${request.name}".`,
     }
-
-    verdicts.push(
-      await assertion.evaluate({
-        record: input.record,
-        judge: input.judge,
-        params: request.params,
-      }),
-    )
   }
+
+  try {
+    return await assertion.evaluate({ record, judge, params: request.params })
+  } catch (error) {
+    // A malformed policy fails the same way on every call, so it must not be softened into a
+    // verdict — the pre-flight in the CLI depends on it propagating before anything is dialled.
+    if (error instanceof PolicyError) throw error
+
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      assertion: request.name,
+      result: 'inconclusive',
+      evidence: [],
+      rationale: `Assertion threw and was not evaluated: ${message}`,
+    }
+  }
+}
+
+export async function adjudicate(input: AdjudicateInput): Promise<Verdict[]> {
+  // Assertions are independent, so they run concurrently rather than as a sequential chain of
+  // (potentially network-backed) judge calls. Promise.all preserves the input order in its
+  // resolved array regardless of completion order, so verdict order still matches request order.
+  const verdicts = await Promise.all(
+    input.assertions.map((request) => evaluateOne(request, input.record, input.judge)),
+  )
 
   verdicts.push(selfReportMatchesEvidence(input.record, verdicts))
   return verdicts

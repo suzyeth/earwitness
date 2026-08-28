@@ -1,4 +1,5 @@
 import type { Assertion, AssertionContext, Verdict } from '../../types.js'
+import { PolicyError } from '../policy-error.js'
 
 const NAME = 'terminated_cleanly'
 const DEFAULT_MAX_DANGLING_SECONDS = 5
@@ -14,7 +15,7 @@ function readMaxDangling(params: Record<string, unknown>): number {
   const raw = params.maxDanglingSeconds
   if (raw === undefined) return DEFAULT_MAX_DANGLING_SECONDS
   if (typeof raw !== 'number') {
-    throw new Error(`${NAME}: params.maxDanglingSeconds must be a number, received ${typeof raw}.`)
+    throw new PolicyError(`${NAME}: params.maxDanglingSeconds must be a number, received ${typeof raw}.`)
   }
   return raw
 }
