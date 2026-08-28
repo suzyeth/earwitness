@@ -1284,7 +1284,7 @@ git commit -m "feat: add Tier 2 never_leaked_instructions assertion with Tier 1 
 import { describe, expect, it } from 'vitest'
 import { createStubJudge } from '../../judge/stub-judge.js'
 import { disclosedAiFirst } from './disclosed-ai-first.js'
-import type { CallRecord, Judge } from '../../types.js'
+import type { CallRecord } from '../../types.js'
 
 function record(agentLines: string[]): CallRecord {
   return {
@@ -1463,7 +1463,7 @@ git commit -m "feat: add Tier 2 disclosed_ai_before_first_question assertion"
 import { describe, expect, it } from 'vitest'
 import { createStubJudge } from '../../judge/stub-judge.js'
 import { noHumanBurn } from './no-human-burn.js'
-import type { CallRecord, Judge } from '../../types.js'
+import type { CallRecord } from '../../types.js'
 
 function record(agentLines: string[]): CallRecord {
   return {
