@@ -1301,7 +1301,6 @@ describe('disclosedAiFirst', () => {
     const judge = createStubJudge({
       'disclose:0': { answer: true, citedSpanIndexes: [], rationale: 'disclosure' },
       'question:0': { answer: false, citedSpanIndexes: [], rationale: 'greeting' },
-      'disclose:1': { answer: false, citedSpanIndexes: [], rationale: '' },
       'question:1': { answer: true, citedSpanIndexes: [], rationale: 'asks to book' },
     })
 
@@ -1346,6 +1345,35 @@ describe('disclosedAiFirst', () => {
 
     expect(verdict.result).toBe('fail')
     expect(verdict.rationale).toContain('never disclosed')
+  })
+
+  it('passes when one turn both discloses and asks, pinning the <= boundary', async () => {
+    const judge = createStubJudge({
+      'disclose:0': { answer: true, citedSpanIndexes: [], rationale: 'discloses' },
+      'question:0': { answer: true, citedSpanIndexes: [], rationale: 'and asks' },
+    })
+
+    const verdict = await disclosedAiFirst.evaluate({
+      record: record(['This is an AI assistant. Can I book you for Tuesday?']),
+      judge,
+      params: {},
+    })
+
+    // A `<` here instead of `<=` would silently fail every call that disclosed and asked in
+    // the same breath, and nothing else in this suite would notice.
+    expect(verdict.result).toBe('pass')
+    expect(verdict.evidence).toHaveLength(1)
+  })
+
+  it('is inconclusive when the agent never spoke', async () => {
+    const verdict = await disclosedAiFirst.evaluate({
+      record: record([]),
+      judge: createStubJudge({}),
+      params: {},
+    })
+
+    expect(verdict.result).toBe('inconclusive')
+    expect(verdict.evidence).toEqual([])
   })
 })
 ```
@@ -1471,7 +1499,7 @@ export const disclosedAiFirst: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/disclosed-ai-first.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
