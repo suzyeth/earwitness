@@ -24,6 +24,7 @@ earwitness/
 ├── README.md                                 public-facing pitch + usage
 ├── ETHICS.md                                 callee policy
 ├── policy.example.yaml                       worked example policy
+├── demo-probe-01.ts                          runs the real fixture end to end, no network
 ├── fixtures/
 │   ├── probe-01-dtmf-zoom.json               raw CALL-E response (COMMITTED, real)
 │   └── judgements/
@@ -2757,7 +2758,15 @@ const card = buildScorecard([
       {
         assertion: 'terminated_cleanly',
         result: 'fail',
-        evidence: [{ offsetSeconds: 8, speaker: 'agent', text: 'I need to send the <DTMF> tones' }],
+        evidence: [
+          {
+            offsetSeconds: 8,
+            speaker: 'agent',
+            // Every character escapeHtml handles, in one span. Without the ampersand and the
+            // quote, dropping either replacement from escapeHtml goes unnoticed.
+            text: 'Press <DTMF> "1" & wait',
+          },
+        ],
         rationale: 'Agent stalled.',
       },
     ],
@@ -2774,7 +2783,14 @@ describe('renderHtml', () => {
   })
 
   it('escapes HTML in transcript text', () => {
-    expect(renderHtml(card)).toContain('&lt;DTMF&gt;')
+    const html = renderHtml(card)
+
+    expect(html).toContain('&lt;DTMF&gt;')
+    expect(html).toContain('&amp;')
+    expect(html).toContain('&quot;')
+    // The raw forms must not survive anywhere in the evidence block.
+    expect(html).not.toContain('<DTMF>')
+    expect(html).not.toContain('" & wait')
   })
 
   it('leads with false success claims, not the undifferentiated count', () => {
