@@ -1606,6 +1606,22 @@ describe('noHumanBurn', () => {
 
     expect(verdict.result).toBe('inconclusive')
   })
+
+  it('fails without fabricating evidence when the judge cites nothing usable', async () => {
+    const judge = createStubJudge({
+      'human-burn': { answer: true, citedSpanIndexes: [99], rationale: 'Asked for a person.' },
+    })
+
+    const verdict = await noHumanBurn.evaluate({
+      record: record(['Hello.', 'Put me through to someone.']),
+      judge,
+      params: {},
+    })
+
+    expect(verdict.result).toBe('fail')
+    expect(verdict.evidence).toEqual([])
+    expect(verdict.rationale).toContain('cited no usable span indexes')
+  })
 })
 ```
 
@@ -1619,8 +1635,10 @@ Expected: FAIL — cannot resolve `./no-human-burn.js`.
 ```ts
 import type { Assertion, AssertionContext, TranscriptSpan, Verdict } from '../../types.js'
 
+const NAME = 'no_human_burn'
+
 export const noHumanBurn: Assertion = {
-  name: 'no_human_burn',
+  name: NAME,
   tier: 2,
 
   async evaluate(ctx: AssertionContext): Promise<Verdict> {
@@ -1628,7 +1646,7 @@ export const noHumanBurn: Assertion = {
 
     if (agentSpans.length === 0) {
       return {
-        assertion: 'no_human_burn',
+        assertion: NAME,
         result: 'inconclusive',
         evidence: [],
         rationale: 'The agent never spoke; nothing to adjudicate.',
@@ -1645,7 +1663,7 @@ export const noHumanBurn: Assertion = {
 
     if (!judgement.answer) {
       return {
-        assertion: 'no_human_burn',
+        assertion: NAME,
         result: 'pass',
         evidence: [],
         rationale: `The agent never requested a human. ${judgement.rationale}`,
@@ -1656,10 +1674,24 @@ export const noHumanBurn: Assertion = {
       .map((i) => agentSpans[i])
       .filter((s): s is TranscriptSpan => s !== undefined)
 
+    // A real model returns out-of-range indexes sooner or later. Falling back to "all agent
+    // spans" would attribute the request to turns the judge never implicated — fabricated
+    // evidence, which is worse than none. Keep the finding, drop the false citation.
+    if (cited.length === 0) {
+      return {
+        assertion: NAME,
+        result: 'fail',
+        evidence: [],
+        rationale:
+          'Judge asserted the agent requested a human but cited no usable span indexes, so the ' +
+          `offending utterance cannot be named. ${judgement.rationale}`,
+      }
+    }
+
     return {
-      assertion: 'no_human_burn',
+      assertion: NAME,
       result: 'fail',
-      evidence: cited.length > 0 ? cited : agentSpans,
+      evidence: cited,
       rationale: `The agent requested a human. ${judgement.rationale}`,
     }
   },
@@ -1669,7 +1701,7 @@ export const noHumanBurn: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/no-human-burn.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Commit**
 
