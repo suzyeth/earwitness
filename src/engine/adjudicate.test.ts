@@ -109,4 +109,61 @@ describe('adjudicate', () => {
     expect(meta?.result).toBe('pass')
     expect(meta?.rationale).toContain('task_completed=false')
   })
+  it('lets an assertion throw on a bad policy rather than swallowing it', async () => {
+    // grounded requires params.field. That throw currently propagates out of adjudicate, so a
+    // malformed policy loses every other assertion's result too. Task 19's pre-flight is what
+    // keeps this away from a real run; pinning it here means a future switch to per-assertion
+    // error verdicts shows up as a deliberate diff rather than silent drift.
+    await expect(
+      adjudicate({
+        record: normalizeCalleCall(raw),
+        assertions: [{ name: 'grounded', params: {} }],
+        judge: createStubJudge({}),
+      }),
+    ).rejects.toThrow('params.field is required')
+  })
+
+  it('evaluates the same assertion twice when requested with different params', async () => {
+    const record = normalizeCalleCall(raw)
+    record.structuredResult = { a: 'nine thirty', b: 'unrelated' }
+    record.transcript = [
+      { offsetSeconds: 0, speaker: 'agent', text: 'What time do you open?' },
+      { offsetSeconds: 4, speaker: 'callee', text: 'We open at nine thirty.' },
+    ]
+
+    const verdicts = await adjudicate({
+      record,
+      assertions: [
+        { name: 'grounded', params: { field: 'a' } },
+        { name: 'grounded', params: { field: 'b' } },
+      ],
+      judge: createStubJudge({}),
+    })
+
+    expect(verdicts).toHaveLength(3)
+    expect(verdicts[0]?.result).toBe('pass')
+    expect(verdicts[1]?.result).toBe('fail')
+  })
+
+  it('fails the meta-assertion when the provider under-reports its own success', async () => {
+    const record = normalizeCalleCall(raw)
+    record.durationSeconds = 9
+    record.transcript = [
+      { offsetSeconds: 0, speaker: 'agent', text: 'Hello.' },
+      { offsetSeconds: 4, speaker: 'callee', text: 'Confirmed.' },
+      { offsetSeconds: 8, speaker: 'agent', text: 'Thank you, goodbye.' },
+    ]
+    record.selfReport = { taskCompleted: false, confidence: 0.2, summary: null }
+
+    const verdicts = await adjudicate({
+      record,
+      assertions: [{ name: 'terminated_cleanly', params: {} }],
+      judge: createStubJudge({}),
+    })
+
+    const meta = verdicts.find((v) => v.assertion === 'self_report_matches_evidence')
+
+    expect(meta?.result).toBe('fail')
+    expect(meta?.rationale).toContain('under-reported')
+  })
 })
