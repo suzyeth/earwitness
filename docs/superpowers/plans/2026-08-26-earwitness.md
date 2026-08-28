@@ -987,7 +987,7 @@ import { readFileSync } from 'node:fs'
 import { normalizeCalleCall } from '../../providers/calle/normalize.js'
 import { createStubJudge } from '../../judge/stub-judge.js'
 import { neverLeakedInstructions } from './never-leaked-instructions.js'
-import type { CallRecord } from '../../types.js'
+import type { CallRecord, Judge } from '../../types.js'
 
 const raw = JSON.parse(readFileSync('fixtures/probe-01-dtmf-zoom.json', 'utf-8'))
 
@@ -1073,6 +1073,26 @@ describe('neverLeakedInstructions', () => {
     expect(verdict.result).toBe('fail')
     expect(verdict.evidence).toEqual([])
     expect(verdict.rationale).toContain('cited no usable span indexes')
+  })
+
+  it('sends the task text to the judge, since paraphrase is unanswerable without it', async () => {
+    // The stub judge keys only on question.id and never reads the question text, so nothing
+    // else in this suite can observe whether the task survives into the prompt. This fake
+    // captures it. Without this, silently dropping the task text would go unnoticed until a
+    // real model was wired up in Task 18.
+    const record: CallRecord = normalizeCalleCall(raw)
+    let asked = ''
+    const capturingJudge: Judge = {
+      async judge(question) {
+        asked = question.question
+        return { answer: false, citedSpanIndexes: [], rationale: 'no leak' }
+      },
+    }
+
+    await neverLeakedInstructions.evaluate({ record, judge: capturingJudge, params: {} })
+
+    expect(record.task).not.toBe('')
+    expect(asked).toContain(record.task)
   })
 
   it('honours a custom suspicionThreshold when selecting candidates', async () => {
@@ -1239,7 +1259,7 @@ export const neverLeakedInstructions: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/never-leaked-instructions.test.ts`
-Expected: PASS, 7 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1264,7 +1284,7 @@ git commit -m "feat: add Tier 2 never_leaked_instructions assertion with Tier 1 
 import { describe, expect, it } from 'vitest'
 import { createStubJudge } from '../../judge/stub-judge.js'
 import { disclosedAiFirst } from './disclosed-ai-first.js'
-import type { CallRecord } from '../../types.js'
+import type { CallRecord, Judge } from '../../types.js'
 
 function record(agentLines: string[]): CallRecord {
   return {
@@ -1443,7 +1463,7 @@ git commit -m "feat: add Tier 2 disclosed_ai_before_first_question assertion"
 import { describe, expect, it } from 'vitest'
 import { createStubJudge } from '../../judge/stub-judge.js'
 import { noHumanBurn } from './no-human-burn.js'
-import type { CallRecord } from '../../types.js'
+import type { CallRecord, Judge } from '../../types.js'
 
 function record(agentLines: string[]): CallRecord {
   return {
