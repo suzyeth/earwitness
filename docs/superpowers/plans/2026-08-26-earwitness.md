@@ -2298,27 +2298,42 @@ const verdicts: Verdict[] = [
 
 describe('buildScorecard', () => {
   it('counts each verdict result', () => {
-    const card = buildScorecard([{ callId: 'call_1', verdicts }])
+    const card = buildScorecard([{ callId: 'call_1', claimedSuccess: true, verdicts }])
 
     expect(card.totals).toEqual({ pass: 1, fail: 2, inconclusive: 1 })
   })
 
   it('reports the self-report disagreement rate separately', () => {
-    const card = buildScorecard([{ callId: 'call_1', verdicts }])
+    const card = buildScorecard([{ callId: 'call_1', claimedSuccess: true, verdicts }])
 
     expect(card.selfReportDisagreements).toBe(1)
     expect(card.callCount).toBe(1)
   })
 
   it('marks the run as failed when any assertion failed', () => {
-    const card = buildScorecard([{ callId: 'call_1', verdicts }])
+    const card = buildScorecard([{ callId: 'call_1', claimedSuccess: true, verdicts }])
 
     expect(card.passed).toBe(false)
   })
 
+  it('separates a false success claim from mere under-reporting', () => {
+    const meta = (result: Verdict['result']): Verdict => ({
+      assertion: 'self_report_matches_evidence', result, evidence: [], rationale: '',
+    })
+
+    const card = buildScorecard([
+      { callId: 'overclaim', claimedSuccess: true, verdicts: [meta('fail')] },
+      { callId: 'underclaim', claimedSuccess: false, verdicts: [meta('fail')] },
+    ])
+
+    // Both are disagreements, but only one is the failure this tool exists to surface.
+    expect(card.selfReportDisagreements).toBe(2)
+    expect(card.falseSuccessClaims).toBe(1)
+  })
+
   it('marks the run as passed when nothing failed', () => {
     const card = buildScorecard([
-      { callId: 'call_1', verdicts: [{ assertion: 'x', result: 'pass', evidence: [], rationale: '' }] },
+      { callId: 'call_1', claimedSuccess: true, verdicts: [{ assertion: 'x', result: 'pass', evidence: [], rationale: '' }] },
     ])
 
     expect(card.passed).toBe(true)
@@ -2338,14 +2353,25 @@ import type { Verdict, VerdictResult } from '../types.js'
 
 export interface CallVerdicts {
   callId: string
+  /**
+   * What the provider claimed about this call, carried alongside the verdicts so the scorecard
+   * can split disagreements by direction without parsing rationale text.
+   */
+  claimedSuccess: boolean | null
   verdicts: Verdict[]
 }
 
 export interface Scorecard {
   callCount: number
   totals: Record<VerdictResult, number>
-  /** Calls where the provider's own success claim contradicted the evidence. */
+  /** Calls where the provider's own success claim contradicted the evidence, either way. */
   selfReportDisagreements: number
+  /**
+   * Of those, the ones that matter: the provider claimed success on a call the evidence says
+   * failed. Under-reporting is also a disagreement and also counted above, but folding the two
+   * together would dilute the single number this tool exists to produce.
+   */
+  falseSuccessClaims: number
   passed: boolean
   calls: CallVerdicts[]
 }
@@ -2355,12 +2381,14 @@ const META = 'self_report_matches_evidence'
 export function buildScorecard(calls: CallVerdicts[]): Scorecard {
   const totals: Record<VerdictResult, number> = { pass: 0, fail: 0, inconclusive: 0 }
   let selfReportDisagreements = 0
+  let falseSuccessClaims = 0
 
   for (const call of calls) {
     for (const verdict of call.verdicts) {
       totals[verdict.result] += 1
       if (verdict.assertion === META && verdict.result === 'fail') {
         selfReportDisagreements += 1
+        if (call.claimedSuccess === true) falseSuccessClaims += 1
       }
     }
   }
@@ -2369,6 +2397,7 @@ export function buildScorecard(calls: CallVerdicts[]): Scorecard {
     callCount: calls.length,
     totals,
     selfReportDisagreements,
+    falseSuccessClaims,
     passed: totals.fail === 0,
     calls,
   }
@@ -2378,7 +2407,7 @@ export function buildScorecard(calls: CallVerdicts[]): Scorecard {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/report/scorecard.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2405,6 +2434,7 @@ import { renderTerminal } from './terminal.js'
 const card = buildScorecard([
   {
     callId: 'call_YeJC',
+    claimedSuccess: true,
     verdicts: [
       { assertion: 'terminated_cleanly', result: 'fail', evidence: [], rationale: 'Agent stalled.' },
       {
@@ -2508,6 +2538,7 @@ import { renderHtml } from './html.js'
 const card = buildScorecard([
   {
     callId: 'call_1',
+    claimedSuccess: true,
     verdicts: [
       {
         assertion: 'terminated_cleanly',
@@ -2639,10 +2670,10 @@ function v(assertion: string, result: Verdict['result']): Verdict {
 }
 
 const before = buildScorecard([
-  { callId: 'c1', verdicts: [v('terminated_cleanly', 'fail'), v('no_human_burn', 'pass')] },
+  { callId: 'c1', claimedSuccess: true, verdicts: [v('terminated_cleanly', 'fail'), v('no_human_burn', 'pass')] },
 ])
 const after = buildScorecard([
-  { callId: 'c1', verdicts: [v('terminated_cleanly', 'pass'), v('no_human_burn', 'fail')] },
+  { callId: 'c1', claimedSuccess: true, verdicts: [v('terminated_cleanly', 'pass'), v('no_human_burn', 'fail')] },
 ])
 
 describe('diffScorecards', () => {
@@ -3217,7 +3248,11 @@ export async function main(argv: string[]): Promise<number> {
   if (args.command === 'audit') {
     const raw = await client.getCall(args.callId)
     const record = normalizeCalleCall(raw as unknown as CalleResponse)
-    results.push({ callId: record.id, verdicts: await adjudicate({ record, assertions: policy.assertions, judge }) })
+    results.push({
+      callId: record.id,
+      claimedSuccess: record.selfReport.taskCompleted,
+      verdicts: await adjudicate({ record, assertions: policy.assertions, judge }),
+    })
   } else {
     // Pre-flight: force every assertion to validate its params against a synthetic record
     // before a single call is placed. `grounded` throws when `params.field` is missing, and
@@ -3247,7 +3282,11 @@ export async function main(argv: string[]): Promise<number> {
       })
       const final = await client.waitForCall(placed.id)
       const record = normalizeCalleCall(final as unknown as CalleResponse)
-      results.push({ callId: record.id, verdicts: await adjudicate({ record, assertions: policy.assertions, judge }) })
+      results.push({
+        callId: record.id,
+        claimedSuccess: record.selfReport.taskCompleted,
+        verdicts: await adjudicate({ record, assertions: policy.assertions, judge }),
+      })
     }
   }
 
