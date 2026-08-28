@@ -71,7 +71,8 @@ function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Ver
       evidence: [],
       rationale:
         `Provider reported task_completed=${claimed}, but nothing could be verified: ` +
-        `${unresolved.length} assertion(s) were inconclusive and none passed.${caveat}`,
+        `${unresolved.length} assertion(s) were inconclusive and none passed` +
+        (unresolved.length > 0 ? ` (${unresolved.map((v) => v.assertion).join(', ')}).` : '.'),
     }
   }
 

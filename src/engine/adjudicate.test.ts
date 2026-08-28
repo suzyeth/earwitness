@@ -79,6 +79,10 @@ describe('adjudicate', () => {
 
     expect(meta?.result).toBe('inconclusive')
     expect(meta?.rationale).toContain('nothing could be verified')
+    expect(meta?.rationale).toContain('terminated_cleanly')
+    // The caveat clause is for the passing branch. Appending it here restated the same count
+    // twice in one sentence.
+    expect(meta?.rationale.split('were inconclusive').length - 1).toBe(1)
   })
 
   it('reports an unknown assertion as inconclusive rather than throwing', async () => {

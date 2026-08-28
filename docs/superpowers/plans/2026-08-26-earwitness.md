@@ -1938,6 +1938,10 @@ describe('adjudicate', () => {
 
     expect(meta?.result).toBe('inconclusive')
     expect(meta?.rationale).toContain('nothing could be verified')
+    expect(meta?.rationale).toContain('terminated_cleanly')
+    // The caveat clause is for the passing branch. Appending it here restated the same count
+    // twice in one sentence.
+    expect(meta?.rationale.split('were inconclusive').length - 1).toBe(1)
   })
 
   it('reports an unknown assertion as inconclusive rather than throwing', async () => {
@@ -2109,7 +2113,8 @@ function selfReportMatchesEvidence(record: CallRecord, verdicts: Verdict[]): Ver
       evidence: [],
       rationale:
         `Provider reported task_completed=${claimed}, but nothing could be verified: ` +
-        `${unresolved.length} assertion(s) were inconclusive and none passed.${caveat}`,
+        `${unresolved.length} assertion(s) were inconclusive and none passed` +
+        (unresolved.length > 0 ? ` (${unresolved.map((v) => v.assertion).join(', ')}).` : '.'),
     }
   }
 
