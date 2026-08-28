@@ -18,6 +18,12 @@ export const noHumanBurn: Assertion = {
       }
     }
 
+    // Known limitation: the judge sees agent turns only. If the callee's IVR offers a human
+    // and the agent merely assents — "yes, please" — the request lives in the callee's turn and
+    // the agent's bare assent is ambiguous alone. `disclosed_ai_before_first_question` solves
+    // this class of problem with a context window, but doing so here would complicate the
+    // citation math, since a cited index would have to distinguish the callee's offer from the
+    // agent's answer. Revisit when Task 18 wires a real model and this becomes observable.
     const judgement = await ctx.judge.judge({
       id: 'human-burn',
       question:
@@ -29,6 +35,9 @@ export const noHumanBurn: Assertion = {
     if (!judgement.answer) {
       return {
         assertion: NAME,
+        // Unlike `never_leaked_instructions`, which cites the small pre-filtered set it
+        // reviewed, a pass here would have to cite every agent turn in the call. That bloats
+        // the report without informing it, so a clean pass cites nothing.
         result: 'pass',
         evidence: [],
         rationale: `The agent never requested a human. ${judgement.rationale}`,

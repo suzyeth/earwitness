@@ -1555,9 +1555,9 @@ git commit -m "feat: add Tier 2 disclosed_ai_before_first_question assertion"
 import { describe, expect, it } from 'vitest'
 import { createStubJudge } from '../../judge/stub-judge.js'
 import { noHumanBurn } from './no-human-burn.js'
-import type { CallRecord } from '../../types.js'
+import type { CallRecord, Judge } from '../../types.js'
 
-function record(agentLines: string[]): CallRecord {
+function recordOf(agentLines: string[]): CallRecord {
   return {
     id: 'call_test', provider: 'calle', placedAt: '', durationSeconds: 30,
     task: 'Stay in the automated menu; never request a human.',
@@ -1574,7 +1574,7 @@ describe('noHumanBurn', () => {
     })
 
     const verdict = await noHumanBurn.evaluate({
-      record: record(['Hello.', 'Can I speak to a representative please?']),
+      record: recordOf(['Hello.', 'Can I speak to a representative please?']),
       judge,
       params: {},
     })
@@ -1589,7 +1589,7 @@ describe('noHumanBurn', () => {
     })
 
     const verdict = await noHumanBurn.evaluate({
-      record: record(['Hello.', 'What are your opening hours?']),
+      record: recordOf(['Hello.', 'What are your opening hours?']),
       judge,
       params: {},
     })
@@ -1599,7 +1599,7 @@ describe('noHumanBurn', () => {
 
   it('is inconclusive when the agent never spoke', async () => {
     const verdict = await noHumanBurn.evaluate({
-      record: record([]),
+      record: recordOf([]),
       judge: createStubJudge({}),
       params: {},
     })
@@ -1613,7 +1613,7 @@ describe('noHumanBurn', () => {
     })
 
     const verdict = await noHumanBurn.evaluate({
-      record: record(['Hello.', 'Put me through to someone.']),
+      record: recordOf(['Hello.', 'Put me through to someone.']),
       judge,
       params: {},
     })
@@ -1621,6 +1621,34 @@ describe('noHumanBurn', () => {
     expect(verdict.result).toBe('fail')
     expect(verdict.evidence).toEqual([])
     expect(verdict.rationale).toContain('cited no usable span indexes')
+  })
+
+  it('sends the agent turns and only the agent turns to the judge', async () => {
+    // Pins what the judge actually receives, mirroring the capturing test in
+    // never-leaked-instructions. If the known limitation above is ever fixed by adding callee
+    // context, this test fails loudly rather than the change slipping through unnoticed.
+    const record: CallRecord = {
+      ...recordOf(['Hello.', 'What are your opening hours?']),
+      transcript: [
+        { offsetSeconds: 0, speaker: 'agent', text: 'Hello.' },
+        { offsetSeconds: 3, speaker: 'callee', text: 'Press zero for a representative.' },
+        { offsetSeconds: 6, speaker: 'agent', text: 'What are your opening hours?' },
+      ],
+    }
+    let seen: { speaker: string; text: string }[] = []
+    const capturingJudge: Judge = {
+      async judge(question) {
+        seen = question.spans.map((s) => ({ speaker: s.speaker, text: s.text }))
+        return { answer: false, citedSpanIndexes: [], rationale: 'no transfer' }
+      },
+    }
+
+    await noHumanBurn.evaluate({ record, judge: capturingJudge, params: {} })
+
+    expect(seen).toEqual([
+      { speaker: 'agent', text: 'Hello.' },
+      { speaker: 'agent', text: 'What are your opening hours?' },
+    ])
   })
 })
 ```
@@ -1653,6 +1681,12 @@ export const noHumanBurn: Assertion = {
       }
     }
 
+    // Known limitation: the judge sees agent turns only. If the callee's IVR offers a human
+    // and the agent merely assents — "yes, please" — the request lives in the callee's turn and
+    // the agent's bare assent is ambiguous alone. `disclosed_ai_before_first_question` solves
+    // this class of problem with a context window, but doing so here would complicate the
+    // citation math, since a cited index would have to distinguish the callee's offer from the
+    // agent's answer. Revisit when Task 18 wires a real model and this becomes observable.
     const judgement = await ctx.judge.judge({
       id: 'human-burn',
       question:
@@ -1664,6 +1698,9 @@ export const noHumanBurn: Assertion = {
     if (!judgement.answer) {
       return {
         assertion: NAME,
+        // Unlike `never_leaked_instructions`, which cites the small pre-filtered set it
+        // reviewed, a pass here would have to cite every agent turn in the call. That bloats
+        // the report without informing it, so a clean pass cites nothing.
         result: 'pass',
         evidence: [],
         rationale: `The agent never requested a human. ${judgement.rationale}`,
@@ -1701,7 +1738,7 @@ export const noHumanBurn: Assertion = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/assertions/no-human-burn.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
