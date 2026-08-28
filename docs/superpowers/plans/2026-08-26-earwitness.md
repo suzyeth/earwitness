@@ -2436,21 +2436,46 @@ describe('buildScorecard', () => {
     expect(card.falseSuccessClaims).toBe(1)
   })
 
-  it('does not let an inconclusive fail the run', () => {
-    // Deliberate: a verdict that could not be evaluated is not a failure. The whole
-    // three-state verdict system rests on this, and nothing else pinned it.
+  it('does not let an inconclusive fail a run that verified something', () => {
+    // A verdict that could not be evaluated is not a failure. Paired with a passing verdict on
+    // purpose: without one, this case is indistinguishable from "nothing was verified", which
+    // is a different question answered by the next test.
     const card = buildScorecard([
       {
         callId: 'call_1',
         claimedSuccess: null,
         verdicts: [
-          { assertion: 'terminated_cleanly', result: 'inconclusive', evidence: [], rationale: '' },
+          { assertion: 'terminated_cleanly', result: 'pass', evidence: [], rationale: '' },
+          { assertion: 'grounded', result: 'inconclusive', evidence: [], rationale: '' },
         ],
       },
     ])
 
     expect(card.totals.inconclusive).toBe(1)
     expect(card.passed).toBe(true)
+  })
+
+  it('does not pass a run in which nothing could be verified at all', () => {
+    // Also the only test that sums totals across more than one call.
+    const card = buildScorecard([
+      {
+        callId: 'a',
+        claimedSuccess: true,
+        verdicts: [
+          { assertion: 'terminated_cleanly', result: 'inconclusive', evidence: [], rationale: '' },
+        ],
+      },
+      {
+        callId: 'b',
+        claimedSuccess: true,
+        verdicts: [
+          { assertion: 'grounded', result: 'inconclusive', evidence: [], rationale: '' },
+        ],
+      },
+    ])
+
+    expect(card.totals).toEqual({ pass: 0, fail: 0, inconclusive: 2 })
+    expect(card.passed).toBe(false)
   })
 
   it('marks the run as passed when nothing failed', () => {
@@ -2520,7 +2545,10 @@ export function buildScorecard(calls: CallVerdicts[]): Scorecard {
     totals,
     selfReportDisagreements,
     falseSuccessClaims,
-    passed: totals.fail === 0,
+    // Requires at least one positive verification, not merely the absence of failures. A run
+    // where every assertion was inconclusive verified nothing, and Task 19 gates CI on this
+    // flag — a green light for "nothing could be checked" is the wrong answer.
+    passed: totals.fail === 0 && totals.pass > 0,
     calls,
   }
 }
@@ -2529,7 +2557,7 @@ export function buildScorecard(calls: CallVerdicts[]): Scorecard {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/report/scorecard.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 

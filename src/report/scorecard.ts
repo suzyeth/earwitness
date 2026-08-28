@@ -47,7 +47,10 @@ export function buildScorecard(calls: CallVerdicts[]): Scorecard {
     totals,
     selfReportDisagreements,
     falseSuccessClaims,
-    passed: totals.fail === 0,
+    // Requires at least one positive verification, not merely the absence of failures. A run
+    // where every assertion was inconclusive verified nothing, and Task 19 gates CI on this
+    // flag — a green light for "nothing could be checked" is the wrong answer.
+    passed: totals.fail === 0 && totals.pass > 0,
     calls,
   }
 }
