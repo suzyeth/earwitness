@@ -2523,6 +2523,10 @@ describe('renderTerminal', () => {
   it('headlines the self-report disagreement count', () => {
     expect(renderTerminal(card)).toContain('self-report disagreed with evidence on 1 of 1 call')
   })
+
+  it('separates false success claims from disagreements in general', () => {
+    expect(renderTerminal(card)).toContain('1 claimed SUCCESS on a call the evidence says failed')
+  })
 })
 ```
 
@@ -2572,6 +2576,11 @@ export function renderTerminal(card: Scorecard): string {
     `Provider self-report disagreed with evidence on ` +
       `${card.selfReportDisagreements} of ${card.callCount} call(s).`,
   )
+  // The number the tool exists to produce. Under-reporting is also a disagreement and is
+  // counted above, but only this line answers "was I told a call worked when it did not".
+  lines.push(
+    `Of those, ${card.falseSuccessClaims} claimed SUCCESS on a call the evidence says failed.`,
+  )
   lines.push(card.passed ? 'RESULT: PASS' : 'RESULT: FAIL')
 
   return lines.join('\n')
@@ -2581,7 +2590,7 @@ export function renderTerminal(card: Scorecard): string {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/report/terminal.test.ts`
-Expected: PASS, 2 tests.
+Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2633,8 +2642,13 @@ describe('renderHtml', () => {
     expect(renderHtml(card)).toContain('&lt;DTMF&gt;')
   })
 
-  it('includes the self-report headline', () => {
-    expect(renderHtml(card)).toContain('Self-report disagreements')
+  it('leads with false success claims, not the undifferentiated count', () => {
+    const html = renderHtml(card)
+
+    expect(html).toContain('False success claims')
+    expect(html.indexOf('False success claims')).toBeLessThan(
+      html.indexOf('Self-report disagreements'),
+    )
   })
 })
 ```
@@ -2700,8 +2714,12 @@ export function renderHtml(card: Scorecard): string {
 <title>Earwitness scorecard</title><style>${STYLE}</style></head>
 <body>
 <h1>Earwitness scorecard</h1>
-<p class="headline">Self-report disagreements: <strong>${card.selfReportDisagreements}</strong>
-of ${card.callCount} call(s). Result: <strong>${card.passed ? 'PASS' : 'FAIL'}</strong>.</p>
+<p class="headline">False success claims:
+<strong>${card.falseSuccessClaims}</strong> of ${card.callCount} call(s) &mdash; the provider
+reported success where the evidence says otherwise.<br>
+Self-report disagreements in total, either direction:
+<strong>${card.selfReportDisagreements}</strong>.
+Result: <strong>${card.passed ? 'PASS' : 'FAIL'}</strong>.</p>
 ${calls}
 </body></html>`
 }
