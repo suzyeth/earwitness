@@ -2300,6 +2300,13 @@ export const PolicySchema = z.object({
 })
 
 export type Policy = z.infer<typeof PolicySchema>
+
+/**
+ * Structurally identical to `AssertionRequest` in `engine/adjudicate.ts`, which is declared
+ * there so the engine does not depend on the policy layer. They can drift silently; if this
+ * schema ever gains a field, update that interface too.
+ */
+export type PolicyAssertionRequest = z.infer<typeof AssertionRequestSchema>
 export type Scenario = z.infer<typeof ScenarioSchema>
 ```
 
@@ -2544,7 +2551,13 @@ export function renderTerminal(card: Scorecard): string {
     for (const verdict of call.verdicts) {
       lines.push(`  [${MARK[verdict.result]}] ${verdict.assertion}`)
       lines.push(`         ${verdict.rationale}`)
+      // The meta-verdict flat-maps evidence from every failing assertion, so two assertions
+      // citing the same turn would print it twice. Dedupe on position and speaker.
+      const seen = new Set<string>()
       for (const span of verdict.evidence) {
+        const key = `${span.offsetSeconds}:${span.speaker}`
+        if (seen.has(key)) continue
+        seen.add(key)
         lines.push(`         evidence @${span.offsetSeconds}s (${span.speaker}): "${span.text}"`)
       }
     }
@@ -3138,6 +3151,19 @@ export function createClaudeJudge(options: ClaudeJudgeOptions): Judge {
 
 Run: `npx vitest run src/judge/claude-judge.test.ts`
 Expected: PASS, 2 tests.
+
+- [ ] **Step 4b: Make adjudication resilient now that judge calls hit the network**
+
+Two changes to `src/engine/adjudicate.ts`, both of which only start to matter once a real judge
+is behind Tier 2:
+
+1. Evaluate assertions concurrently. They are independent, and five sequential chains of model
+   calls per record is needless latency. `Promise.all` over the requests, preserving order.
+2. Catch per-assertion. A thrown error currently aborts the whole run and discards the other
+   four verdicts. With a network-backed judge, a transient failure would blank an entire
+   report. Turn a throw into an `inconclusive` verdict carrying the error message, and update
+   the test that currently pins the throwing behaviour — that test exists precisely so this
+   change is a deliberate, visible diff.
 
 - [ ] **Step 5: Reshape `disclosed_ai_first`'s question call for a real model**
 
