@@ -1781,6 +1781,10 @@ describe('registry', () => {
   it('returns undefined for an unknown name', () => {
     expect(getAssertion('does_not_exist')).toBeUndefined()
   })
+
+  it('does not register the self-report meta-assertion', () => {
+    expect(getAssertion('self_report_matches_evidence')).toBeUndefined()
+  })
 })
 ```
 
@@ -1802,6 +1806,11 @@ import { neverLeakedInstructions } from './assertions/never-leaked-instructions.
 import { noHumanBurn } from './assertions/no-human-burn.js'
 import { terminatedCleanly } from './assertions/terminated-cleanly.js'
 
+/**
+ * `self_report_matches_evidence` is deliberately absent. It is a meta-assertion computed over
+ * the verdict set in `adjudicate()`, not something a policy can request or configure, and
+ * registering it would let a policy switch off the one check the provider cannot influence.
+ */
 const ASSERTIONS: Assertion[] = [
   terminatedCleanly,
   grounded,
@@ -1824,7 +1833,7 @@ export function listAssertions(): string[] {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/registry.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Commit**
 
