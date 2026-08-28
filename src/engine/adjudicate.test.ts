@@ -91,4 +91,22 @@ describe('adjudicate', () => {
     expect(verdicts[0]?.result).toBe('inconclusive')
     expect(verdicts[0]?.rationale).toContain('Unknown assertion')
   })
+  it('passes when the provider admits failure and the evidence agrees', async () => {
+    // Branch 2 must test `claimed && failures.length > 0`, not `failures.length > 0` alone.
+    // A provider that reports task_completed=false on a call that genuinely failed is telling
+    // the truth; treating that as a contradiction would accuse an honest report of lying.
+    const record = normalizeCalleCall(raw)
+    record.selfReport = { taskCompleted: false, confidence: 0.4, summary: null }
+
+    const verdicts = await adjudicate({
+      record,
+      assertions: [{ name: 'terminated_cleanly', params: {} }],
+      judge: createStubJudge({}),
+    })
+
+    const meta = verdicts.find((v) => v.assertion === 'self_report_matches_evidence')
+
+    expect(meta?.result).toBe('pass')
+    expect(meta?.rationale).toContain('task_completed=false')
+  })
 })
