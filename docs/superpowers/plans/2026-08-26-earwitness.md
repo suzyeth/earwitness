@@ -2156,6 +2156,19 @@ scenarios: []
     expect(policy.assertions[0]?.params).toEqual({})
   })
 
+  it('rejects an assertion name the registry does not know', () => {
+    expect(() =>
+      parsePolicy(`
+version: 1
+name: typo
+provider: calle
+assertions:
+  - name: terminated_clean
+scenarios: []
+`),
+    ).toThrow(/unknown assertion/)
+  })
+
   it('rejects a phone number that is not E.164', () => {
     expect(() =>
       parsePolicy(`
@@ -2182,9 +2195,17 @@ Expected: FAIL — cannot resolve `./load.js`.
 
 ```ts
 import { z } from 'zod'
+import { listAssertions } from '../engine/registry.js'
 
+/**
+ * Names are checked against the registry here, not left to fail at adjudication time. A policy
+ * typo should be a load error, in the same category as a malformed phone number — not a
+ * surprise after calls have already been dialled.
+ */
 export const AssertionRequestSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().refine((n) => listAssertions().includes(n), {
+    message: `unknown assertion; known names are ${listAssertions().join(', ')}`,
+  }),
   params: z.record(z.unknown()).default({}),
 })
 
@@ -3180,6 +3201,25 @@ export async function main(argv: string[]): Promise<number> {
     const record = normalizeCalleCall(raw as unknown as CalleResponse)
     results.push({ callId: record.id, verdicts: await adjudicate({ record, assertions: policy.assertions, judge }) })
   } else {
+    // Pre-flight: force every assertion to validate its params against a synthetic record
+    // before a single call is placed. `grounded` throws when `params.field` is missing, and
+    // without this that throw would arrive after the phone had already rung — burning a call
+    // from a budget of twenty to report a typo.
+    await adjudicate({
+      record: {
+        id: 'preflight',
+        provider: 'calle',
+        placedAt: '',
+        durationSeconds: Number.NaN,
+        task: '',
+        transcript: [],
+        structuredResult: null,
+        selfReport: { taskCompleted: null, confidence: null, summary: null },
+      },
+      assertions: policy.assertions,
+      judge,
+    })
+
     for (const scenario of policy.scenarios) {
       const placed = await client.placeCall({
         task: scenario.task,
@@ -3219,6 +3259,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 Run: `npx vitest run src/cli/index.test.ts`
 Expected: PASS, 4 tests.
+
+> **Pre-flight.** `run` adjudicates a synthetic empty record before dialling anything. Every
+> assertion validates its params on that pass, so a policy naming `grounded` without a `field`
+> fails immediately instead of after the first call has been placed. The synthetic record is
+> built to be maximally inert: no transcript, unknown duration, and a null self-report, so every
+> assertion takes its own degenerate-state branch rather than producing a misleading verdict.
 
 - [ ] **Step 5: Run the whole suite**
 
