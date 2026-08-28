@@ -23,6 +23,18 @@ scenarios: []
     expect(policy.assertions[0]?.params).toEqual({})
   })
 
+  it('rejects a policy declaring an unsupported version', () => {
+    expect(() =>
+      parsePolicy(`
+version: 99
+name: from the future
+provider: calle
+assertions: []
+scenarios: []
+`),
+    ).toThrow()
+  })
+
   it('rejects an assertion name the registry does not know', () => {
     expect(() =>
       parsePolicy(`
