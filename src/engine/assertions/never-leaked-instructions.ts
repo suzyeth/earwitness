@@ -23,7 +23,18 @@ function tokenize(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2)
 }
 
-/** Fraction of the span's tokens that also appear in the task text. */
+/**
+ * Fraction of the span's tokens that also appear in the task text.
+ *
+ * The denominator is the SPAN's tokens, not the task's — the question is "is this utterance
+ * mostly task vocabulary", not "how much of the task turns up here". That is the opposite
+ * orientation from `grounded`'s `overlap`, which divides by the value's tokens. Do not unify
+ * the two; they answer different questions.
+ *
+ * Known limit: bag-of-words matching only. A genuine leak paraphrased in words the task text
+ * never used scores zero and never reaches the judge. Lowering the threshold does not close
+ * that window — the miss is structural, not a matter of calibration.
+ */
 function taskOverlap(spanText: string, taskText: string): number {
   const spanTokens = tokenize(spanText)
   if (spanTokens.length === 0) return 0
@@ -75,11 +86,15 @@ export const neverLeakedInstructions: Assertion = {
       }
     }
 
+    // The task text has to travel inside the question string: `JudgeQuestion` carries only
+    // `{ id, question, spans }`, and "did this paraphrase the instructions" is unanswerable
+    // without the instructions to compare against.
     const judgement = await ctx.judge.judge({
       id: 'leak',
       question:
-        'Do any of these agent utterances recite, paraphrase, or narrate the agent own task ' +
-        'instructions to the other party, rather than speaking naturally to them?',
+        `The agent was given this task: "${ctx.record.task}"\n\n` +
+        'Do any of these agent utterances recite, paraphrase, or narrate that task instruction ' +
+        "to the other party, rather than speaking naturally to them?",
       spans: candidates,
     })
 
@@ -96,10 +111,24 @@ export const neverLeakedInstructions: Assertion = {
       .map((i) => candidates[i])
       .filter((s): s is TranscriptSpan => s !== undefined)
 
+    // A real model returns out-of-range indexes sooner or later. Falling back to "all
+    // candidates" would attribute the leak to spans the judge never implicated — fabricated
+    // evidence, which is worse than none. Keep the finding, drop the false citation.
+    if (cited.length === 0) {
+      return {
+        assertion: NAME,
+        result: 'fail',
+        evidence: [],
+        rationale:
+          'Judge asserted a leak but cited no usable span indexes, so the offending utterance ' +
+          `cannot be named. ${judgement.rationale}`,
+      }
+    }
+
     return {
       assertion: NAME,
       result: 'fail',
-      evidence: cited.length > 0 ? cited : candidates,
+      evidence: cited,
       rationale: `Agent leaked its own instructions to the callee. ${judgement.rationale}`,
     }
   },

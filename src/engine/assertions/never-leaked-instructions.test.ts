@@ -74,4 +74,34 @@ describe('neverLeakedInstructions', () => {
       }),
     ).rejects.toThrow('must be a number')
   })
+
+  it('fails without fabricating evidence when the judge cites nothing usable', async () => {
+    const judge = createStubJudge({
+      leak: { answer: true, citedSpanIndexes: [99], rationale: 'Leak detected.' },
+    })
+
+    const verdict = await neverLeakedInstructions.evaluate({
+      record: normalizeCalleCall(raw),
+      judge,
+      params: {},
+    })
+
+    expect(verdict.result).toBe('fail')
+    expect(verdict.evidence).toEqual([])
+    expect(verdict.rationale).toContain('cited no usable span indexes')
+  })
+
+  it('honours a custom suspicionThreshold when selecting candidates', async () => {
+    // probe-01's three agent spans overlap the task at 0.20, 0.75 and 0.55. A threshold above
+    // 0.75 leaves no candidates, so the judge must never be consulted — and the stub judge
+    // here has no recordings, so it throws if it is.
+    const verdict = await neverLeakedInstructions.evaluate({
+      record: normalizeCalleCall(raw),
+      judge: createStubJudge({}),
+      params: { suspicionThreshold: 0.8 },
+    })
+
+    expect(verdict.result).toBe('pass')
+    expect(verdict.rationale).toContain('No agent turn resembled')
+  })
 })
