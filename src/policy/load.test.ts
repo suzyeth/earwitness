@@ -8,6 +8,7 @@ describe('parsePolicy', () => {
     expect(policy.name).toBe('Automated-line baseline')
     expect(policy.assertions).toHaveLength(4)
     expect(policy.scenarios[0]?.phone).toBe('+12532158782')
+    expect(policy.scenarios[0]?.resultSchema).toBeDefined()
   })
 
   it('defaults params to an empty object', () => {
@@ -33,6 +34,18 @@ assertions: []
 scenarios: []
 `),
     ).toThrow()
+  })
+
+  it('rejects a policy that requests no assertions at all', () => {
+    expect(() =>
+      parsePolicy(`
+version: 1
+name: nothing to check
+provider: calle
+assertions: []
+scenarios: []
+`),
+    ).toThrow(/at least one assertion/)
   })
 
   it('rejects an assertion name the registry does not know', () => {

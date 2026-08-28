@@ -2185,6 +2185,9 @@ git commit -m "feat: add adjudicate() and the self_report_matches_evidence meta-
 - [ ] **Step 1: Write `policy.example.yaml`**
 
 ```yaml
+# Every scenario in this repository dials a public automated answering service, never a
+# person. The system under test is the outbound agent, not whoever picks up, so no
+# stranger's time is consumed. See ETHICS.md.
 version: 1
 name: Automated-line baseline
 provider: calle
@@ -2201,6 +2204,14 @@ scenarios:
     task: >-
       Call this conference dial-in bridge, wait for the automated prompt, and report
       exactly what the automated system says. Do not attempt to reach a human.
+    # Without this, structured_result comes back null and the `grounded` assertion above
+    # fails for the wrong reason on every run.
+    resultSchema:
+      type: object
+      required: [system_response_verbatim]
+      properties:
+        system_response_verbatim:
+          type: string
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -2216,6 +2227,7 @@ describe('parsePolicy', () => {
     expect(policy.name).toBe('Automated-line baseline')
     expect(policy.assertions).toHaveLength(4)
     expect(policy.scenarios[0]?.phone).toBe('+12532158782')
+    expect(policy.scenarios[0]?.resultSchema).toBeDefined()
   })
 
   it('defaults params to an empty object', () => {
@@ -2241,6 +2253,18 @@ assertions: []
 scenarios: []
 `),
     ).toThrow()
+  })
+
+  it('rejects a policy that requests no assertions at all', () => {
+    expect(() =>
+      parsePolicy(`
+version: 1
+name: nothing to check
+provider: calle
+assertions: []
+scenarios: []
+`),
+    ).toThrow(/at least one assertion/)
   })
 
   it('rejects an assertion name the registry does not know', () => {
@@ -2307,7 +2331,9 @@ export const PolicySchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   provider: z.literal('calle'),
-  assertions: z.array(AssertionRequestSchema),
+  // A policy with no assertions would dial every scenario and adjudicate nothing.
+  assertions: z.array(AssertionRequestSchema).min(1, 'a policy must request at least one assertion'),
+  // Scenarios may be empty: `audit` runs a policy against calls that already happened.
   scenarios: z.array(ScenarioSchema),
 })
 
@@ -2341,7 +2367,7 @@ export function loadPolicy(path: string): Policy {
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run src/policy/load.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 7: Commit**
 

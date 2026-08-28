@@ -1,3 +1,6 @@
+# Every scenario in this repository dials a public automated answering service, never a
+# person. The system under test is the outbound agent, not whoever picks up, so no
+# stranger's time is consumed. See ETHICS.md.
 version: 1
 name: Automated-line baseline
 provider: calle
@@ -14,3 +17,11 @@ scenarios:
     task: >-
       Call this conference dial-in bridge, wait for the automated prompt, and report
       exactly what the automated system says. Do not attempt to reach a human.
+    # Without this, structured_result comes back null and the `grounded` assertion above
+    # fails for the wrong reason on every run.
+    resultSchema:
+      type: object
+      required: [system_response_verbatim]
+      properties:
+        system_response_verbatim:
+          type: string

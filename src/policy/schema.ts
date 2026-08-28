@@ -24,7 +24,9 @@ export const PolicySchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   provider: z.literal('calle'),
-  assertions: z.array(AssertionRequestSchema),
+  // A policy with no assertions would dial every scenario and adjudicate nothing.
+  assertions: z.array(AssertionRequestSchema).min(1, 'a policy must request at least one assertion'),
+  // Scenarios may be empty: `audit` runs a policy against calls that already happened.
   scenarios: z.array(ScenarioSchema),
 })
 
