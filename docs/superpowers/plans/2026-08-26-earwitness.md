@@ -4400,7 +4400,15 @@ Draw the content from the bugs this project actually found, each with a reproduc
    aloud it is a serious leak; if not, the transcript field is misleading. Either way it needs
    a decision.
 4. `created_at` observed six days behind wall-clock time.
-5. Documented key prefix `calle_live_` does not match the issued prefix `iams_live_`; the
+5. **`GET /v1/calls/{id}` returns different timestamps than the create/poll flow did for the
+   same call.** Re-fetching `call_YeJC_98WIgQvG6IbCmhrQA` on 2026-08-29 returned
+   `started_at: 2026-08-20T19:59:17Z` and `completed_at: ...19:59:35Z`, where the response
+   captured at call time had `19:59:17.704470Z` and `19:59:36.017501Z`. Sub-second precision
+   is dropped and the completion second differs by one, so a duration computed from a
+   re-fetch is 10.0s where the original was 10.3s. Verdicts were unaffected here, but any
+   tool that audits a call after the fact gets different numbers than the tool that placed
+   it. Repro: `fixtures/probe-01-dtmf-zoom.json` versus a fresh GET of the same id.
+6. Documented key prefix `calle_live_` does not match the issued prefix `iams_live_`; the
    OpenAPI `servers` entry is still labelled "Placeholder" despite being the live base URL.
 
 - [ ] **Step 6: Commit**
