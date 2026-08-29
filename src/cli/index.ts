@@ -9,6 +9,18 @@ import { diffScorecards } from '../report/diff.js'
 import { renderHtml } from '../report/html.js'
 import { buildScorecard, type CallVerdicts } from '../report/scorecard.js'
 import { renderTerminal } from '../report/terminal.js'
+import type { Judge } from '../types.js'
+
+/**
+ * Injection points for the two things `main` would otherwise reach into the world for. Real
+ * usage passes nothing and gets the defaults; tests pass doubles so the safety gates below —
+ * `diff` needing no credentials, and pre-flight aborting before a call is billed — are
+ * observable. Neither had any coverage before, and both could have been removed silently.
+ */
+export interface MainDeps {
+  makeClient?: (apiKey: string) => CalleClient
+  makeJudge?: (apiKey: string) => Judge
+}
 
 export type CliArgs =
   | { command: 'audit'; callId: string; policyPath: string; htmlOut: string | undefined }
@@ -50,7 +62,7 @@ function requireEnv(name: string): string {
   return value
 }
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[], deps: MainDeps = {}): Promise<number> {
   const args = parseCliArgs(argv)
 
   if (args.command === 'diff') {
@@ -62,8 +74,12 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   const policy = loadPolicy(args.policyPath)
-  const judge = createClaudeJudge({ apiKey: requireEnv('ANTHROPIC_API_KEY') })
-  const client = new CalleClient({ apiKey: requireEnv('CALLE_API_KEY') })
+  // Constructed here, below the `diff` early return, so comparing two local scorecards
+  // never demands an account.
+  const makeJudge = deps.makeJudge ?? ((k: string) => createClaudeJudge({ apiKey: k }))
+  const makeClient = deps.makeClient ?? ((k: string) => new CalleClient({ apiKey: k }))
+  const judge = makeJudge(requireEnv('ANTHROPIC_API_KEY'))
+  const client = makeClient(requireEnv('CALLE_API_KEY'))
   const results: CallVerdicts[] = []
 
   if (args.command === 'audit') {
