@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
+import { pathToFileURL } from 'node:url'
 import { adjudicate } from '../engine/adjudicate.js'
 import { createClaudeJudge } from '../judge/claude-judge.js'
 import { loadPolicy } from '../policy/load.js'
@@ -139,7 +140,10 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
   return card.passed ? 0 : 1
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// `file://${process.argv[1]}` never matches on Windows: argv carries backslashes and a bare
+// drive letter, while import.meta.url is a triple-slashed, forward-slashed URL. The guard
+// silently failed and the bin entry did nothing at all. pathToFileURL normalises both.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2))
     .then((code) => process.exit(code))
     .catch((error: unknown) => {

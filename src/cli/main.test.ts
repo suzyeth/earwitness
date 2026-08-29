@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -162,4 +163,25 @@ afterEach(() => {
   } catch {
     // nothing written this run
   }
+})
+
+describe('the executable entry point', () => {
+  // Every other test imports `main` directly, so none of them notices when the module runs but
+  // never invokes it. That is exactly what happened: the guard compared import.meta.url against
+  // `file://${process.argv[1]}`, which never matches on Windows, and the CLI silently did
+  // nothing while exiting 0. Only spawning it for real catches that.
+  it('actually runs when executed as a script', () => {
+    const before = write('entry-before.json', scorecard('pass'))
+    const after = write('entry-after.json', scorecard('fail'))
+    const cli = join(process.cwd(), 'src', 'cli', 'index.ts')
+
+    const result = spawnSync(
+      process.execPath,
+      [join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), cli, 'diff', before, after],
+      { encoding: 'utf-8' },
+    )
+
+    expect(result.stdout).toContain('regressed')
+    expect(result.status).toBe(1)
+  }, 30_000)
 })
