@@ -6,6 +6,7 @@ import { adjudicate } from './adjudicate.js'
 import type { Judge } from '../types.js'
 
 const raw = JSON.parse(readFileSync('fixtures/probe-01-dtmf-zoom.json', 'utf-8'))
+const healthy = JSON.parse(readFileSync('fixtures/probe-02-zoom-healthy.json', 'utf-8'))
 
 describe('adjudicate', () => {
   it('catches probe-01: the provider claimed success on a call that failed', async () => {
@@ -84,6 +85,24 @@ describe('adjudicate', () => {
     // The caveat clause is for the passing branch. Appending it here restated the same count
     // twice in one sentence.
     expect(meta?.rationale.split('were inconclusive').length - 1).toBe(1)
+  })
+
+  it('clears a call that genuinely worked, on a second real recording', async () => {
+    // probe-02 is a real call placed on 2026-08-29 against the same Zoom bridge. The agent
+    // greeted, listened, captured what the bridge said, and the line closed a second later.
+    // Without this, every fixture-driven test in the suite runs against a failing call, and a
+    // tool that had degenerated into failing everything would still look correct.
+    const verdicts = await adjudicate({
+      record: normalizeCalleCall(healthy),
+      assertions: [
+        { name: 'terminated_cleanly', params: {} },
+        { name: 'grounded', params: { field: 'system_response_verbatim' } },
+      ],
+      judge: createStubJudge({}),
+    })
+
+    expect(verdicts.map((v) => v.result)).toEqual(['pass', 'pass', 'pass'])
+    expect(verdicts.find((v) => v.assertion === 'grounded')?.evidence[0]?.speaker).toBe('callee')
   })
 
   it('reports an unknown assertion as inconclusive rather than throwing', async () => {

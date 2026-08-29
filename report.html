@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earwitness scorecard</title><style>
+  body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 2rem auto; max-width: 52rem;
+         color: #16181d; background: #fff; }
+  h1 { font-size: 1.4rem; }
+  .call { border: 1px solid #d8dce3; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  .verdict { margin: .75rem 0; padding-left: .75rem; border-left: 3px solid #d8dce3; }
+  .fail { border-left-color: #c0362c; }
+  .pass { border-left-color: #2e7d4f; }
+  .inconclusive { border-left-color: #b8860b; }
+  .tag { font-weight: 600; text-transform: uppercase; font-size: .75rem; letter-spacing: .04em; }
+  .evidence { font-family: ui-monospace, monospace; font-size: .85rem; background: #f5f6f8;
+              padding: .4rem .6rem; border-radius: 4px; margin: .3rem 0; overflow-x: auto; }
+  .headline { font-size: 1.05rem; padding: .8rem 1rem; background: #fdf3f2; border-radius: 8px; }
+</style></head>
+<body>
+<h1>Earwitness scorecard</h1>
+<p class="headline">False success claims:
+<strong>0</strong> of 1 call(s) &mdash; the provider
+reported success where the evidence says otherwise.<br>
+Self-report disagreements in total, either direction:
+<strong>0</strong>.
+Result: <strong>PASS</strong>.</p>
+<div class="call"><h2>call_1r9MvX9VLf-zyKLtvE1rgg</h2><div class="verdict pass">
+            <div><span class="tag">pass</span> terminated_cleanly</div>
+            <div>Call ended 1.4s after the final turn at 8s, within the 5s limit.</div>
+            <div class="evidence">@8s (callee): You have you have</div>
+          </div><div class="verdict pass">
+            <div><span class="tag">pass</span> never_leaked_instructions</div>
+            <div>No agent turn resembled the task text closely enough to warrant review.</div>
+            
+          </div><div class="verdict inconclusive">
+            <div><span class="tag">inconclusive</span> no_human_burn</div>
+            <div>Assertion threw and was not evaluated: Judge API responded 401</div>
+            
+          </div><div class="verdict pass">
+            <div><span class="tag">pass</span> grounded</div>
+            <div>Field &quot;system_response_verbatim&quot; = &quot;Welcome to Zoom. Enter your meeting ID followed by pound. You have you have&quot; is grounded in a callee turn at 4s.</div>
+            <div class="evidence">@4s (callee): Welcome to Zoom. Enter your meeting ID followed by pound.</div>
+          </div><div class="verdict pass">
+            <div><span class="tag">pass</span> self_report_matches_evidence</div>
+            <div>Provider self-report (task_completed=true) agrees with the evidence. 1 assertion(s) were inconclusive and were not used to challenge the report: no_human_burn.</div>
+            
+          </div></div>
+</body></html>
