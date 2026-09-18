@@ -171,5 +171,5 @@ recorded stub judge in `src/judge/stub-judge.ts`, which is what every test in th
 uses. A Claude-backed judge exists at `src/judge/claude-judge.ts` and is unit-tested against a
 mocked `fetch` response, but no Tier 2 assertion has ever been adjudicated by a live model call.
 
-`npm test` runs 100 tests across 18 files, all against fixtures and stubs — zero of them place
+`npm test` runs 101 tests across 18 files, all against fixtures and stubs — zero of them place
 a phone call or make a network request. `npx tsc --noEmit` is clean under strict mode.
