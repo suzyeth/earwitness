@@ -1,5 +1,7 @@
 # Earwitness
 
+[![Test](https://github.com/suzyeth/earwitness/actions/workflows/test.yml/badge.svg)](https://github.com/suzyeth/earwitness/actions/workflows/test.yml)
+
 **An independent verification layer for phone-call agents.** It re-derives what happened on a
 call from transcript evidence alone, and never trusts the provider's self-report.
 
